@@ -1,0 +1,11 @@
+data/
+env/
+output/
+theirs/
+logs/
+__pycache__
+*.swp
+*.ipynb_checkpoints/
+*.pyc
+*.png
+*.swo
