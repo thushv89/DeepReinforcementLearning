@@ -1,0 +1,7 @@
+* graphs for everything
+
+1. control test with large pool
+2. control test with mnist
+3. control test with uniform distribution in first 12k
+4. more actions
+5. q value dumping and loading

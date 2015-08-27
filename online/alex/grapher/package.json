@@ -1,0 +1,21 @@
+{
+  "name": "grapher",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "d3": "^3.4.12",
+    "lodash": "^2.4.1",
+    "phantomjs": "^1.9.10"
+  },
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-contrib-coffee": "^0.12.0",
+    "grunt-nodemon": "^0.3.0"
+  }
+}
