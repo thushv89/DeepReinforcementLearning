@@ -58,7 +58,7 @@ class Transformer(object):
         :param update: how to get to output from input
         :return: Theano function
         '''
-        idx = T.scalar('idx')
+        idx = T.iscalar('idx')
         given = {
             self._x : transformed_x(x[idx * batch_size : (idx + 1) * batch_size]),
             self._y : y[idx * batch_size : (idx + 1) * batch_size]
