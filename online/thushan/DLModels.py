@@ -48,7 +48,7 @@ class Transformer(object):
         self.arcs = arcs
 
 
-    def make_func(self, x, y, batch_size, output, update, transformed_x = identity):
+    def make_func(self, x, y, batch_size, output, updates, transformed_x = identity):
         '''
         returns a Theano function that takes x and y inputs and return the given output using given updates
         :param x: input feature vectors
@@ -64,7 +64,7 @@ class Transformer(object):
             self._y : y[idx * batch_size : (idx + 1) * batch_size]
         }
 
-        return theano.function(inputs=[idx],outputs=output, updates=update, givens=given, on_unused_input='warn')
+        return theano.function(inputs=[idx],outputs=output, updates=updates, givens=given, on_unused_input='warn')
 
     def process(self, x, y):
         '''
@@ -149,7 +149,7 @@ class DeepAutoencoder(Transformer):
         self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
         self.cost = T.mean(self.cost_vector)
-        self.validation_error = None
+
         return None
 
     def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
@@ -174,7 +174,7 @@ class DeepAutoencoder(Transformer):
         return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens)
 
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.validation_error, update=None, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)
 
     def get_hard_examples(self, _, x, y, batch_size, transformed_x=identity):
         '''
@@ -187,7 +187,7 @@ class DeepAutoencoder(Transformer):
         '''
         # sort the values by cost and get the top half of it (above average error)
         indexes = T.argsort(self.cost_vector)[(self.cost_vector.shape[0] // 2):]
-        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], update=None, transformed_x=transformed_x)
+        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], updates=None, transformed_x=transformed_x)
 
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
@@ -228,7 +228,7 @@ class Softmax(Transformer):
         results = T.argmax(p_y_given_x, axis=1)
 
         self.theta = [param for layer in self.layers for param in [layer.W, layer.b]]
-        self.errors = T.mean(T.neq(results,y))
+        self._errors = T.mean(T.neq(results,y))
         self.cost_vector = -T.log(p_y_given_x)[T.arange(y.shape[0]), y]
         self.cost = T.mean(self.cost_vector)
 
@@ -251,6 +251,8 @@ class Softmax(Transformer):
         return self.make_func(x,y,batch_size,self._errors,None, transformed_x)
 
 class Pool(object):
+
+    #theano.config.compute_test_value = 'warn'
     ''' A ring buffer (Acts as a Queue) '''
     __slots__ = ['size', 'max_size', 'position', 'data', 'data_y', '_update']
 
@@ -290,6 +292,12 @@ class Pool(object):
 
     def add_from_shared(self, index, batch_size, x, y):
         self.add(x[index * batch_size:(index+1) * batch_size].eval(), y[index * batch_size:(index+1) * batch_size].eval(), batch_size)
+
+    def as_size(self, new_size, batch_size):
+        batches = new_size// batch_size
+        starting_index = self.position // batch_size
+        index_space = self.size // batch_size
+        return [(starting_index - i + index_space) % index_space for i in range(batches)]
 
     def clear(self):
         self.size = 0
@@ -353,7 +361,7 @@ class MergeIncrementingAutoencoder(Transformer):
         # increment a subtensor by a certain value
         for i, nnlayer in enumerate(self._autoencoder.layers):
             if i == 0:
-                mi_updates += [(nnlayer.W, T.inc_subtensor(nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)))]
+                mi_updates += [(nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T))]
                 mi_updates += [(nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate*T.grad(mi_cost,nnlayer.b)[nnlayer.idx]))]
             else:
                 mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
@@ -394,7 +402,7 @@ class MergeIncrementingAutoencoder(Transformer):
             layer_bias = self.layers[0].b.get_value().copy()
 
             # initialization of weights
-            init = 4 * np.sqrt(6.0 / (sum(layer_weights.shape())))
+            init = 4 * np.sqrt(6.0 / (sum(layer_weights.shape)))
 
             # number of nodes to merge or increment
             merge_count = int(merge_percentage * layer_weights.shape[0])
@@ -460,7 +468,7 @@ class MergeIncrementingAutoencoder(Transformer):
 
             if empty_slots:
 
-                for _ in range(self.iterations):
+                for _ in range(int(self.iterations)):
                     for i in pool_indexes:
                         layer_greedy[0](i, empty_slots)
 
@@ -477,12 +485,12 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[1].W.set_value(last_layer_weights)
             self.layers[1].b_prime.set_value(last_layer_prime)
 
-            for _ in range(self.iterations):
+            for _ in range(int(self.iterations)):
                 for i in pool_indexes:
                     finetune(i)
 
             if empty_slots:
-                for _ in range(self.iterations):
+                for _ in range(int(self.iterations)):
                     for i in pool_indexes:
                         mi_train(i, empty_slots)
             else:
@@ -548,6 +556,8 @@ class DeepReinforcementLearningModel(Transformer):
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
 
         self._error_log = []
+        self._reconstruction_log = []
+        self._neuron_balance_log = []
 
     def process(self, x, y):
         self._autoencoder.process(x, y)
@@ -616,7 +626,11 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
-            self._error_log.append(np.asarray(error_func(batch_id)[0]))
+            test = error_func(batch_id)
+            self._error_log.append(np.asscalar(error_func(batch_id)))
+            test2 = reconstruction_func(batch_id)
+            self._reconstruction_log.append(np.asscalar(reconstruction_func(batch_id)))
+            self._neuron_balance_log.append(neuron_balance)
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
@@ -625,9 +639,10 @@ class DeepReinforcementLearningModel(Transformer):
                 'pool_relevant': pool_relevant(self._pool),
                 'initial_size': self.layers[-1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
+                'error_log':self._error_log,
                 'errors': self._error_log[-1],
-                'neuron_balance': self.neuron_balance_log[-1],
-                'reconstruction': self._reconstruction_log[-1]
+                'neuron_balance': self._neuron_balance_log[-1],
+                'r_15': moving_average(self._reconstruction_log, 15)
             }
 
             def merge_increment(func, pool, amount, merge, inc):
@@ -648,11 +663,18 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             #this is where reinforcement learning comes to play
-            self._controller.move()
+            print('Reinforcement learning move ...')
+            self._controller.move(len(self._error_log), data, funcs)
 
             train_func(batch_id)
 
         return train_adaptively
+
+    def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
+        return self._softmax.validate_func(arc,x,y,batch_size,transformed_x)
+
+    def error_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.error_func(arc,x,y,batch_size)
 
 
 

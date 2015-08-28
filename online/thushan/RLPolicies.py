@@ -40,6 +40,7 @@ class ContinuousState(Controller):
 
     def move(self, i, data, funcs):
 
+        #if we haven't completed 30 iterations, keep pooling
         if i <=30:
             funcs['pool'](1)
             return
@@ -49,6 +50,7 @@ class ContinuousState(Controller):
 
         state = (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30'))
 
+        #print('current state %d, %d, %d, %d, %d' % (data['r_15'][-1], data['neuron_balance'], data['mea_5'], data['mea_15'], data['mea_30']))
 
         ''' gps = {}
 
@@ -90,9 +92,15 @@ class ContinuousState(Controller):
         elif action == self.Action.increment:
             funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)
 
+        actionStr = ''
+        if action == 1: actionStr = 'Pool'
+        elif action == 2: actionStr = 'Reduce'
+        elif action == 3: actionStr = 'Increment'
+
+        print('action taken: ', actionStr)
+
         self.prev_action = action
         self.prev_state = state
 
     def end(self):
-
         return [{'name': 'q_state.json', 'json': json.dumps({str(k):{str(tup): value for tup, value in v.items()} for k,v in self.q.items()})}]

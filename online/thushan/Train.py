@@ -40,7 +40,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model():
+def make_model(in_size, hid_sizes, out_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -48,9 +48,6 @@ def make_model():
     corruption_level = 0.2
     lam = 0.2
     iterations = 1000
-    in_size = 100
-    hid_sizes = [500,500,500]
-    out_size = 10
     batch_size = 1000
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
@@ -67,15 +64,16 @@ def run():
     epochs = 500
     theano.config.floatX = 'float32'
 
-    deepRLModel = make_model()
+    deepRLModel = make_model(784, [500,500,500], 10)
     input_layer_size = deepRLModel.layers[0].initial_size[0]
 
     print('loading data ...')
     data_file, _, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
     print('pooling data ...')
+    # row size (layers[0] initial_size[0] and max size (batch_size)
     batch_pool = DLModels.Pool(deepRLModel.layers[0].initial_size[0], batch_size)
-
+    print('finished pooling ...')
     for arc in range(deepRLModel.arcs):
 
         results_func = deepRLModel.validate_func
@@ -86,8 +84,10 @@ def run():
         print('training data ...')
         try:
             for epoch in range(epochs):
+                print('Training Epoch %d ...' % epoch)
                 for batch in range(batch_size):
-
+                    print('')
+                    print('training epoch %d and batch %d' % (epoch, batch))
                     train_func(batch)
         except StopIteration:
             pass

@@ -224,8 +224,9 @@ class Pool(object):
         y = T.ivector('new_data_y')
         pos = T.iscalar('update_index')
 
-        update = [ (self.data,   T.set_subtensor(self.data[pos:pos+x.shape[0]], x))
-                 , (self.data_y, T.set_subtensor(self.data_y[pos:pos+y.shape[0]], y))
+        update = [
+            (self.data, T.set_subtensor(self.data[pos:pos+x.shape[0]], x)),
+            (self.data_y, T.set_subtensor(self.data_y[pos:pos+y.shape[0]], y))
                  ]
         self._update = theano.function([pos, x, y], updates=update)
 
