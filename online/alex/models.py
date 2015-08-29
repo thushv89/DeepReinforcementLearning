@@ -545,7 +545,7 @@ class AdaptingCombinedObjective(Transformer):
 
         def pool_relevant(pool):
             ''' Find the batches in the pool that have above average similarity to the current batch '''
-            current = self.context['distribution'][-1]
+            current = self.load_from_pickle['distribution'][-1]
 
             def magnitude(x):
                 ''' Magnitude of the vector x '''

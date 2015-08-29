@@ -192,7 +192,7 @@ class DeepAutoencoder(Transformer):
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
     def __init__(self, layers, corruption_level, rng):
-        super().__init__(layers)
+        super().__init__(layers, len(layers))
         self._autoencoders = [DeepAutoencoder([layer], corruption_level, rng) for layer in layers]
 
     def process(self, x, y):
@@ -555,6 +555,7 @@ class DeepReinforcementLearningModel(Transformer):
         self._pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
 
+        self.distribution = {}
         self._error_log = []
         self._reconstruction_log = []
         self._neuron_balance_log = []
@@ -595,6 +596,8 @@ class DeepReinforcementLearningModel(Transformer):
 
         def pool_relevant(pool):
 
+            current = self.distribution[-1]
+
             def magnitude(x):
                 '''  returns sqrt(sum(v(i)^2)) '''
                 return sum((v **2 for v in x.values() )) ** 0.5
@@ -611,7 +614,7 @@ class DeepReinforcementLearningModel(Transformer):
 
             # score over batches for this pool
             batches_covered = pool.size // batch_size
-            batch_scores = [(i % batches_covered, compare(current, self.context['distribution'][i])) for i in range(-1,-1 - batches_covered)]
+            batch_scores = [(i % batches_covered, compare(current, self.distribution[i])) for i in range(-1,-1 - batches_covered)]
             mean = np.mean([ v[1] for v in batch_scores ])
 
             last = [0, 0]
@@ -669,6 +672,9 @@ class DeepReinforcementLearningModel(Transformer):
             train_func(batch_id)
 
         return train_adaptively
+
+    def set_distribution(self, distribution):
+        self.distribution = distribution
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc,x,y,batch_size,transformed_x)

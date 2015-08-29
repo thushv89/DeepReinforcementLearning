@@ -9,9 +9,13 @@ import online.thushan.DLModels as DLModels
 import online.thushan.NNLayer as NNLayer
 import os
 
-def make_shared(batch_x, batch_y, name):
+def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
     '''' Load data into shared variables '''
-    x_shared = theano.shared(batch_x, name + '_x_pkl')
+    if not normalize:
+        x_shared = theano.shared(batch_x, name + '_x_pkl')
+    else:
+        x_shared = theano.shared(batch_x, name + '_x_pkl')/normalize_thresh
+
     y_shared = T.cast(theano.shared(batch_y.astype(theano.config.floatX), name + '_y_pkl'), 'int32')
     size = batch_x.shape[0]
 
@@ -22,9 +26,9 @@ def load_from_pickle(filename):
     with open(filename, 'rb') as handle:
         train, valid, test = pickle.load(handle, encoding='latin1')
 
-        train = make_shared(train[0], train[1], 'train')
-        valid = make_shared(valid[0], valid[1], 'valid')
-        test  = make_shared(test[0], test[1], 'test')
+        train = make_shared(train[0], train[1], 'train', True, 255.0)
+        valid = make_shared(valid[0], valid[1], 'valid', True, 255.0)
+        test  = make_shared(test[0], test[1], 'test', True, 255.0)
 
         return train, valid, test
 
@@ -59,8 +63,10 @@ def make_model(in_size, hid_sizes, out_size):
     return model
 
 def run():
+
+    distribution = []
     learning_rate = 0.1
-    batch_size = 100
+    batch_size = 1000
     epochs = 500
     theano.config.floatX = 'float32'
 
@@ -68,7 +74,7 @@ def run():
     input_layer_size = deepRLModel.layers[0].initial_size[0]
 
     print('loading data ...')
-    data_file, _, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
+    data_file, valid_file, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
     print('pooling data ...')
     # row size (layers[0] initial_size[0] and max size (batch_size)
@@ -76,10 +82,10 @@ def run():
     print('finished pooling ...')
     for arc in range(deepRLModel.arcs):
 
-        results_func = deepRLModel.validate_func
+        results_func = deepRLModel.error_func
 
         train_func = deepRLModel.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
-        validate_func = results_func(arc, data_file[0], data_file[1], batch_size)
+        validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
 
         print('training data ...')
         try:
@@ -88,7 +94,16 @@ def run():
                 for batch in range(batch_size):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
+                    from collections import Counter
+                    dist = Counter(data_file[1].eval())
+                    distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
+                    deepRLModel.set_distribution(distribution)
+
                     train_func(batch)
+
+
+                validate_results = validate_func(batch)
+                print("Validation error: %f" % validate_results)
         except StopIteration:
             pass
 

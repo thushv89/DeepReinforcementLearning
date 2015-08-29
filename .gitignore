@@ -9,6 +9,7 @@
 .ipython/
 .idea/
 Data/
+Print/
 com/dl/cifar-10/DataCifar
 com/dl/faces/DataFaces
 Util/all_images
