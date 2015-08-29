@@ -92,7 +92,7 @@ def run():
         try:
             for epoch in range(epochs):
                 print('Training Epoch %d ...' % epoch)
-                for batch in range(math.ceil(data_file[2]/batch_size)):
+                for batch in range(math.ceil(data_file[2]*0.5/batch_size)):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
                     from collections import Counter
@@ -105,9 +105,10 @@ def run():
                         print('')
                     train_func(batch)
 
+                for batch in range(math.ceil(valid_file[2]/batch_size)):
+                    validate_results = validate_func(batch)
+                    print("epoch %d and batch %d Validation error: %f" % (epoch, batch, validate_results))
 
-                validate_results = validate_func(batch)
-                print("Validation error: %f" % validate_results)
         except StopIteration:
             pass
 
