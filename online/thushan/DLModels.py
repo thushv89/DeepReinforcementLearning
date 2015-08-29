@@ -455,7 +455,7 @@ class MergeIncrementingAutoencoder(Transformer):
             empty_slots = [slot for slot in empty_slots if slot < new_size] + list(range(layer_weights.shape[0],new_size))
             new_layer_weights[empty_slots] = np.asarray(self.rng.uniform(low=-init, high=init, size=(len(empty_slots), prev_dimensions)), dtype=theano.config.floatX)
 
-            layer_bias.resize(new_size)
+            layer_bias.resize(new_size, refcheck=False)
 
             layer_bias_prime = self.layers[0].b_prime.get_value().copy()
             layer_bias_prime.resize(prev_dimensions)
@@ -478,9 +478,9 @@ class MergeIncrementingAutoencoder(Transformer):
                 last_layer_weights[dest] = last_layer_weights[src]
                 last_layer_weights[src] = np.zeros(last_layer_weights.shape[1])
 
-            last_layer_weights.resize((prev_dimensions, self.layers[1].initial_size[1]))
+            last_layer_weights.resize((prev_dimensions, self.layers[1].initial_size[1]),refcheck=False)
             last_layer_prime = self.layers[1].b_prime.get_value().copy()
-            last_layer_prime.resize(prev_dimensions)
+            last_layer_prime.resize(prev_dimensions, refcheck=False)
 
             self.layers[1].W.set_value(last_layer_weights)
             self.layers[1].b_prime.set_value(last_layer_prime)

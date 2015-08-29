@@ -95,10 +95,12 @@ def run():
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
                     from collections import Counter
-                    dist = Counter(data_file[1].eval())
+                    dist = Counter(data_file[1][batch * batch_size : (batch + 1) * batch_size].eval())
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
                     deepRLModel.set_distribution(distribution)
 
+                    if batch == 50:
+                        print('')
                     train_func(batch)
 
 
