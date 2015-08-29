@@ -8,6 +8,7 @@ import theano.tensor as T
 import online.thushan.DLModels as DLModels
 import online.thushan.NNLayer as NNLayer
 import os
+import math
 
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
     '''' Load data into shared variables '''
@@ -91,10 +92,11 @@ def run():
         try:
             for epoch in range(epochs):
                 print('Training Epoch %d ...' % epoch)
-                for batch in range(batch_size):
+                for batch in range(math.ceil(data_file[2]/batch_size)):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
                     from collections import Counter
+                    test = data_file[1][batch * batch_size : (batch + 1) * batch_size].eval()
                     dist = Counter(data_file[1][batch * batch_size : (batch + 1) * batch_size].eval())
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
                     deepRLModel.set_distribution(distribution)
