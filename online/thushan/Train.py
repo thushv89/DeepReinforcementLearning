@@ -67,7 +67,7 @@ def run():
 
     distribution = []
     learning_rate = 0.1
-    batch_size = 1000
+    batch_size = 500
     epochs = 500
     theano.config.floatX = 'float32'
 
@@ -92,7 +92,7 @@ def run():
         try:
             for epoch in range(epochs):
                 print('Training Epoch %d ...' % epoch)
-                for batch in range(math.ceil(data_file[2]*0.5/batch_size)):
+                for batch in range(math.ceil(data_file[2]/batch_size)):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
                     from collections import Counter

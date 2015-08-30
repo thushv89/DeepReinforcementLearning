@@ -69,7 +69,7 @@ class ContinuousState(Controller):
             gp.fit(np.array(x), np.array(y))
             gps[a] = gp'''
 
-        if self.prev_action or self.prev_action:
+        if self.prev_state or self.prev_action:
 
             reward = - data['error_log'][-1]
 
@@ -81,6 +81,8 @@ class ContinuousState(Controller):
             reward -= neuron_penalty
 
             sample = reward
+            #sample = reward + self.discount_rate * max(self.q[state, a] for a in self.actions)
+            #sample = reward + self.discount_rate * max((np.asscalar(gp.predict([self.prev_state])[0])) for gp in gps.values())
 
             if self.prev_state in self.q[self.prev_action]:
                 self.q[self.prev_action][self.prev_state] = (1 - self.learning_rate) * self.q[self.prev_action][self.prev_state] + self.learning_rate * sample
