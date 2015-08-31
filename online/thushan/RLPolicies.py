@@ -5,7 +5,7 @@ from collections import defaultdict
 from sklearn.gaussian_process import GaussianProcess
 import numpy as np
 import json
-
+import random
 class Controller(object):
 
     def move(self, i, data, funcs):
@@ -57,17 +57,23 @@ class ContinuousState(Controller):
         state = (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30'))
         print('current state %d, %f, %f, %f, %f' % (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30')))
 
-        ''' gps = {}
+        # since we have a continuous state space, we need a regression technique to get the Q-value for prev state and action
+        # for a discrete state space, this can be done by using a hashtable Q(s,a) -> value
+        gps = {}
 
+        # self.q is like this there are 3 main items Action.pool, Action.reduce, Action.increment
+        # each action has (s, q) value pairs
+        # use this (s, q) pairs to predict the q value for a new state
         for a, value_dict in self.q.items():
+            #makes sure, if to use regression element Q(s,a) should have atleast 3 samples
             if len(value_dict) < 2:
                 continue
 
             x, y = zip(*value_dict.items())
 
-            gp = GaussianProcess(theta0=0.1, thetaL=0.001, thetaU==1, nugget=0.1)
+            gp = GaussianProcess(theta0=0.1, thetaL=0.001, thetaU=1, nugget=0.1)
             gp.fit(np.array(x), np.array(y))
-            gps[a] = gp'''
+            gps[a] = gp
 
         if self.prev_state or self.prev_action:
 
@@ -80,16 +86,35 @@ class ContinuousState(Controller):
 
             reward -= neuron_penalty
 
-            sample = reward
+            #sample = reward
             #sample = reward + self.discount_rate * max(self.q[state, a] for a in self.actions)
-            #sample = reward + self.discount_rate * max((np.asscalar(gp.predict([self.prev_state])[0])) for gp in gps.values())
+            # len(gps) == 0 in the first time move() is called
+            if len(gps) == 0:
+                sample = reward
+            else:
+                sample = reward + self.discount_rate * max((np.asscalar(gp.predict([self.prev_state])[0])) for gp in gps.values())
 
             if self.prev_state in self.q[self.prev_action]:
                 self.q[self.prev_action][self.prev_state] = (1 - self.learning_rate) * self.q[self.prev_action][self.prev_state] + self.learning_rate * sample
             else:
                 self.q[self.prev_action][self.prev_state] = sample
 
-        action = list(self.Action)[i % len(self.Action)]
+        #action = list(self.Action)[i % len(self.Action)]
+        #the first time move() is called
+        if len(gps) == 0 or i <= 60:
+            action = list(self.Action)[i % len(self.Action)]
+            print('evenly chose:', action)
+        else:
+            # determine best action by sampling the GPs
+            if random.random() <= 0.1:
+                action = list(self.Action)[i % len(self.Action)]
+                print('explore:', action)
+            else:
+                action = max((np.asscalar(gp.predict(state)[0]), action) for action, gp in gps.items())[1]
+                print('chose:', action)
+
+            for a, gp in gps.items():
+                print(a, np.asscalar(gp.predict(state)[0]))
 
         to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
         if action == self.Action.pool:

@@ -57,7 +57,7 @@ def make_model(in_size, hid_sizes, out_size):
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
-    model = DLModels.DeepReinforcementLearningModel(layers, corruption_level, rng, lam, iterations, batch_size, pool_size, policy)
+    model = DLModels.DeepReinforcementLearningModel(layers, corruption_level, rng, iterations ,lam, batch_size, pool_size, policy)
 
     model.process(T.matrix('x'), T.ivector('y'))
 
