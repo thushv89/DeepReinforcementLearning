@@ -38,14 +38,15 @@ def iterations_shim(func, iterations):
 class Transformer(object):
 
     #__slots__ save memory by allocating memory only to the varibles defined in the list
-    __slots__ = ['layers','arcs', '_x','_y','_logger']
+    __slots__ = ['layers','arcs', '_x','_y','_logger','use_error']
 
-    def __init__(self,layers, arcs):
+    def __init__(self,layers, arcs, use_error):
         self.layers = layers
         self._x = None
         self._y = None
         self._logger = None
         self.arcs = arcs
+        self.use_error = use_error
 
 
     def make_func(self, x, y, batch_size, output, updates, transformed_x = identity):
@@ -110,7 +111,7 @@ class Transformer(object):
 class DeepAutoencoder(Transformer):
     ''' General Deep Autoencoder '''
     def __init__(self,layers, corruption_level, rng):
-        super().__init__(layers, 1)
+        super().__init__(layers, 1, False)
         self._rng = rng
         self._corr_level = corruption_level
 
@@ -192,7 +193,7 @@ class DeepAutoencoder(Transformer):
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
     def __init__(self, layers, corruption_level, rng):
-        super().__init__(layers, len(layers))
+        super().__init__(layers, len(layers), False)
         self._autoencoders = [DeepAutoencoder([layer], corruption_level, rng) for layer in layers]
 
     def process(self, x, y):
@@ -211,7 +212,7 @@ class StackedAutoencoder(Transformer):
 class Softmax(Transformer):
 
     def __init__(self, layers, iterations):
-        super().__init__(layers, 1)
+        super().__init__(layers, 1, True)
 
         self.theta = None
         self._errors = None
@@ -313,7 +314,7 @@ class MergeIncrementingAutoencoder(Transformer):
     __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
-        super().__init__(layers, 1)
+        super().__init__(layers, 1, False)
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._layered_autoencoders = [DeepAutoencoder([self.layers[i]], corruption_level, rng)
@@ -503,10 +504,10 @@ class MergeIncrementingAutoencoder(Transformer):
 class CombinedObjective(Transformer):
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
-        super().__init__(layers, 1)
+        super().__init__(layers, 1, True)
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
-        self._softmax = Softmax(layers,iterations)
+        self._softmax = Softmax(layers,1)
         self.lam = lam
         self.iterations = iterations
 
@@ -544,12 +545,13 @@ class DeepReinforcementLearningModel(Transformer):
 
     def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller):
 
-        super().__init__(layers, 1)
+        super().__init__(layers, 1, True)
 
         self._mi_batch_size = mi_batch_size
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        #self._sae = StackedAutoencoder(layers, corruption_level, rng)
         self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam, iterations)
 
         self._pool = Pool(layers[0].initial_size[0], pool_size)
@@ -564,6 +566,7 @@ class DeepReinforcementLearningModel(Transformer):
         self._autoencoder.process(x, y)
         self._softmax.process(x, y)
         self._merge_increment.process(x, y)
+        #self._sae.process(x, y)
 
     def train_func(self, arc, learning_rate, x, y, batch_size, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
@@ -575,6 +578,7 @@ class DeepReinforcementLearningModel(Transformer):
         merge_inc_func_batch = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, x, y)
         merge_inc_func_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._pool.data, self._pool.data_y)
         merge_inc_func_hard_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._hard_pool.data, self._hard_pool.data_y)
+        #sae_train_func = self._sae.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         hard_examples_func = self._autoencoder.get_hard_examples(arc, x, y, batch_size, apply_x)
 
@@ -629,9 +633,7 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
-            test = error_func(batch_id)
             self._error_log.append(np.asscalar(error_func(batch_id)))
-            test2 = reconstruction_func(batch_id)
             self._reconstruction_log.append(np.asscalar(reconstruction_func(batch_id)))
             self._neuron_balance_log.append(neuron_balance)
 
@@ -642,15 +644,16 @@ class DeepReinforcementLearningModel(Transformer):
                 'pool_relevant': pool_relevant(self._pool),
                 'initial_size': self.layers[-1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
-                'error_log':self._error_log,
+                'error_log': self._error_log,
                 'errors': self._error_log[-1],
                 'neuron_balance': self._neuron_balance_log[-1],
+                'reconstruction': self._reconstruction_log[-1],
                 'r_15': moving_average(self._reconstruction_log, 15)
             }
 
             def merge_increment(func, pool, amount, merge, inc):
 
-                nonlocal  neuron_balance
+                nonlocal neuron_balance
                 change = 1 + inc - merge
                 neuron_balance *= change
 
@@ -677,10 +680,10 @@ class DeepReinforcementLearningModel(Transformer):
         self.distribution = distribution
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
-        return self._softmax.validate_func(arc,x,y,batch_size,transformed_x)
+        return self._softmax.validate_func(arc, x, y,batch_size)
 
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
-        return self._softmax.error_func(arc,x,y,batch_size)
+        return self._softmax.error_func(arc, x, y, batch_size)
 
 
 
