@@ -372,7 +372,8 @@ class MergeIncrementingAutoencoder(Transformer):
 
         softmax_theta = [self.layers[-1].W, self.layers[-1].b]
 
-        mi_updates += [(param, param - learning_rate * grad) for param,grad in zip(softmax_theta, T.grad(mi_cost,softmax_theta))]
+        mi_updates += [(param, param - learning_rate * grad)
+                       for param, grad in zip(softmax_theta, T.grad(mi_cost, softmax_theta))]
 
         idx = T.iscalar('idx')
 
@@ -420,6 +421,7 @@ class MergeIncrementingAutoencoder(Transformer):
 
                 # x and y coordinates created out of index (assume these are the two nodes
                 # to merge)
+                # what's the criteria for this?
                 x_i, y_i = index % layer_weights.shape[0], index // layer_weights.shape[0]
 
                 # if x_i and y_i are not in "used"`  list
@@ -467,11 +469,10 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[0].b.set_value(layer_bias)
             self.layers[0].b_prime.set_value(layer_bias_prime)
 
-            if empty_slots:
-
-                for _ in range(int(self.iterations)):
-                    for i in pool_indexes:
-                        layer_greedy[0](i, empty_slots)
+            #if empty_slots:
+            #    for _ in range(int(self.iterations)):
+            #        for i in pool_indexes:
+            #            layer_greedy[0](i, empty_slots)
 
             last_layer_weights = self.layers[1].W.get_value().copy()
 

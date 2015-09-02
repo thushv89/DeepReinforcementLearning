@@ -55,7 +55,7 @@ class ContinuousState(Controller):
             #return 0 if len(data[name]) < 2 else data[name][-1] - data[name][-2]
 
         state = (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30'))
-        print('current state %d, %f, %f, %f, %f' % (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30')))
+        print('current state %f, %f, %f, %f, %f' % (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30')))
 
         # since we have a continuous state space, we need a regression technique to get the Q-value for prev state and action
         # for a discrete state space, this can be done by using a hashtable Q(s,a) -> value
@@ -86,6 +86,7 @@ class ContinuousState(Controller):
 
             reward -= neuron_penalty
 
+            print('reward', reward, 'neuron_penalty', neuron_penalty)
             #sample = reward
             #sample = reward + self.discount_rate * max(self.q[state, a] for a in self.actions)
             # len(gps) == 0 in the first time move() is called

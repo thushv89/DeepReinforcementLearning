@@ -45,15 +45,14 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(in_size, hid_sizes, out_size):
+def make_model(in_size, hid_sizes, out_size,batch_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
     layers = []
     corruption_level = 0.2
     lam = 0.2
-    iterations = 1000
-    batch_size = 1000
+    iterations = 10
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -67,11 +66,11 @@ def run():
 
     distribution = []
     learning_rate = 0.1
-    batch_size = 500
+    batch_size = 1000
     epochs = 500
     theano.config.floatX = 'float32'
 
-    deepRLModel = make_model(784, [500,500,500], 10)
+    deepRLModel = make_model(784, [750,500,250], 10, batch_size)
     input_layer_size = deepRLModel.layers[0].initial_size[0]
 
     print('loading data ...')
@@ -96,13 +95,10 @@ def run():
                     print('')
                     print('training epoch %d and batch %d' % (epoch, batch))
                     from collections import Counter
-                    test = data_file[1][batch * batch_size : (batch + 1) * batch_size].eval()
                     dist = Counter(data_file[1][batch * batch_size : (batch + 1) * batch_size].eval())
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
                     deepRLModel.set_distribution(distribution)
 
-                    if batch == 50:
-                        print('')
                     train_func(batch)
 
                 for batch in range(math.ceil(valid_file[2]/batch_size)):
