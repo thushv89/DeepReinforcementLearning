@@ -382,7 +382,8 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
+        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given, mode='FAST_COMPILE'
+                                                                                                           '')
 
         def merge_model(pool_indexes, merge_percentage, inc_percentage):
             '''
