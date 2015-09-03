@@ -1,12 +1,13 @@
-from online.thushan import RLPolicies
+
 
 __author__ = 'Thushan Ganegedara'
 
 import pickle
 import theano
 import theano.tensor as T
-import online.thushan.DLModels as DLModels
-import online.thushan.NNLayer as NNLayer
+from online.thushan import DLModels
+from online.thushan import NNLayer
+from online.thushan import RLPolicies
 import os
 import math
 
@@ -56,7 +57,8 @@ def make_model(in_size, hid_sizes, out_size,batch_size):
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
-    model = DLModels.DeepReinforcementLearningModel(layers, corruption_level, rng, iterations ,lam, batch_size, pool_size, policy)
+    model = DLModels.DeepReinforcementLearningModel(
+        layers, corruption_level, rng, iterations, lam, batch_size, pool_size, policy)
 
     model.process(T.matrix('x'), T.ivector('y'))
 

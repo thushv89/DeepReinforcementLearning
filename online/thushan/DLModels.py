@@ -32,7 +32,7 @@ def iterations_shim(func, iterations):
     def function(i):
         for _ in range(iterations):
             func(i)
-    return func
+    return function
 
 
 class Transformer(object):
@@ -270,7 +270,8 @@ class Pool(object):
         pos = T.iscalar('update_index')
 
         # update statement to add new data from the position of the last data point
-        update = [(self.data, T.set_subtensor(self.data[pos:pos+x.shape[0]],x)),
+        update = [
+            (self.data, T.set_subtensor(self.data[pos:pos+x.shape[0]],x)),
             (self.data_y, T.set_subtensor(self.data_y[pos:pos+y.shape[0]],y))]
 
         # function to update the data and data_y
@@ -564,6 +565,8 @@ class DeepReinforcementLearningModel(Transformer):
         #self._sae = StackedAutoencoder(layers, corruption_level, rng)
         self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam, iterations)
 
+        # _pool : has all the data points
+        # _hard_pool: has data points only that are above average reconstruction error
         self._pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
 
@@ -608,6 +611,8 @@ class DeepReinforcementLearningModel(Transformer):
             weights /= sum(weights)
             return np.convolve(log, weights)[n-1:-n+1]
 
+        # pool_relevent pools all the batches from the current to the last batch that satisfies
+        # cosine_dist(batch) < mean
         def pool_relevant(pool):
 
             current = self.distribution[-1]
@@ -628,9 +633,15 @@ class DeepReinforcementLearningModel(Transformer):
 
             # score over batches for this pool
             batches_covered = pool.size // batch_size
+            # the below statement get the batch scores, batch scores are basically
+            # the cosine distance between a given batch and the current batch (last)
+            # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
             batch_scores = [(i % batches_covered, compare(current, self.distribution[i])) for i in range(-1,-1 - batches_covered)]
+            # mean is the mean cosine score
             mean = np.mean([ v[1] for v in batch_scores ])
 
+            # takewhile(predicate, iterable) returns elements until the predicate is true
+            # get all the batches with batch score greater than mean
             last = [0, 0]
             for last in itertools.takewhile(lambda s: s[1] > mean, batch_scores):
                 pass
@@ -639,13 +650,13 @@ class DeepReinforcementLearningModel(Transformer):
 
         def train_adaptively(batch_id):
 
-            batch_pool.add_from_shared(batch_id, batch_size, x, y)
-            self._pool.add_from_shared(batch_id, batch_size, x, y)
-            self._hard_pool.add(*hard_examples_func(batch_id))
-
             self._error_log.append(np.asscalar(error_func(batch_id)))
             self._reconstruction_log.append(np.asscalar(reconstruction_func(batch_id)))
             self._neuron_balance_log.append(neuron_balance)
+
+            batch_pool.add_from_shared(batch_id, batch_size, x, y)
+            self._pool.add_from_shared(batch_id, batch_size, x, y)
+            self._hard_pool.add(*hard_examples_func(batch_id))
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
