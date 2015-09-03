@@ -78,10 +78,6 @@ def run():
     print('loading data ...')
     data_file, valid_file, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-    print('pooling data ...')
-    # row size (layers[0] initial_size[0] and max size (batch_size)
-    batch_pool = DLModels.Pool(deepRLModel.layers[0].initial_size[0], batch_size)
-    print('finished pooling ...')
     for arc in range(deepRLModel.arcs):
 
         results_func = deepRLModel.error_func
@@ -103,9 +99,10 @@ def run():
 
                     train_func(batch)
 
-                for batch in range(math.ceil(valid_file[2]/batch_size)):
-                    validate_results = validate_func(batch)
-                    print("epoch %d and batch %d Validation error: %f" % (epoch, batch, validate_results))
+                    if batch==25:
+                        for batch in range(math.ceil(valid_file[2]/batch_size)):
+                            validate_results = validate_func(batch)
+                            print("epoch %d and batch %d Validation error: %f" % (epoch, batch, validate_results))
 
         except StopIteration:
             pass

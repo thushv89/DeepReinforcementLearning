@@ -468,7 +468,7 @@ class MergeIncrementingAutoencoder(Transformer):
             empty_slots = [slot for slot in empty_slots if slot < new_size] + list(range(layer_weights.shape[0],new_size))
             new_layer_weights[empty_slots] = np.asarray(self.rng.uniform(low=-init, high=init, size=(len(empty_slots), prev_dimensions)), dtype=theano.config.floatX)
 
-            layer_bias.resize(new_size, refcheck=False)
+            layer_bias.resize(new_size)
 
             layer_bias_prime = self.layers[0].b_prime.get_value().copy()
             layer_bias_prime.resize(prev_dimensions)
@@ -561,9 +561,9 @@ class DeepReinforcementLearningModel(Transformer):
         self._mi_batch_size = mi_batch_size
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
-        self._softmax = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
         #self._sae = StackedAutoencoder(layers, corruption_level, rng)
-        self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam, iterations)
+        self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam=lam, iterations=iterations)
 
         # _pool : has all the data points
         # _hard_pool: has data points only that are above average reconstruction error
@@ -690,7 +690,7 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             #this is where reinforcement learning comes to play
-            print('Reinforcement learning move ...')
+
             self._controller.move(len(self._error_log), data, funcs)
 
             train_func(batch_id)
