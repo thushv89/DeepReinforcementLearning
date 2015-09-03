@@ -44,5 +44,15 @@ if __name__ == '__main__':
     d = data['Joe']
     x = 25 // 2
     val = np.finfo(config.floatX)'''
-    name = '(%d*->%d*)' % (20, 5)
-    print("")
+
+    update = [([2,3], [4,5])]
+    print (len(update))
+    update += [([1,1], [1,1])]
+    print(len(update))
+    print(update)
+
+    arr = [1,2,3,4,5]
+
+    arr2 = [val for i,val in enumerate(arr[:-1])]
+
+    print(arr2)

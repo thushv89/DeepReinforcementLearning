@@ -269,9 +269,11 @@ class Pool(object):
         y = T.ivector('new_data_y')
         pos = T.iscalar('update_index')
 
+        # update statement to add new data from the position of the last data point
         update = [(self.data, T.set_subtensor(self.data[pos:pos+x.shape[0]],x)),
             (self.data_y, T.set_subtensor(self.data_y[pos:pos+y.shape[0]],y))]
 
+        # function to update the data and data_y
         self._update = theano.function([pos, x, y], updates=update)
 
     def add(self, x, y, rows=None):
@@ -279,11 +281,13 @@ class Pool(object):
         if not rows:
             rows = x.shape[0]
 
+        # get the latter portion of x and y (of size max_size)
         if rows > self.max_size:
-            x = x[rows - self.max_size]
-            y = y[rows - self.max_size]
+            x = x[rows - self.max_size:]
+            y = y[rows - self.max_size:]
 
-        if rows+ self.position > self.max_size:
+        # if new data size + current position exceed max_size
+        if rows + self.position > self.max_size:
             available_size = self.max_size - self.position
             self._ring_add(x[:available_size], y[:available_size])
             x = x[available_size:]
@@ -295,7 +299,7 @@ class Pool(object):
         self.add(x[index * batch_size:(index+1) * batch_size].eval(), y[index * batch_size:(index+1) * batch_size].eval(), batch_size)
 
     def as_size(self, new_size, batch_size):
-        batches = new_size// batch_size
+        batches = new_size // batch_size
         starting_index = self.position // batch_size
         index_space = self.size // batch_size
         return [(starting_index - i + index_space) % index_space for i in range(batches)]
@@ -318,7 +322,7 @@ class MergeIncrementingAutoencoder(Transformer):
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._layered_autoencoders = [DeepAutoencoder([self.layers[i]], corruption_level, rng)
-                                       for i, layer in enumerate(self.layers[:-1])]
+                                       for i, layer in enumerate(self.layers[:-1])] #[:-1] gets all items except last
         self._softmax = Softmax(layers,iterations)
         self._combined_objective = CombinedObjective(layers, corruption_level, rng, lam, iterations)
         self.lam = lam
@@ -347,11 +351,14 @@ class MergeIncrementingAutoencoder(Transformer):
         # finfo gives the maximum value of floats
         m_ranks = T.argsort((m_cosine - T.tri(m.shape[0]) * np.finfo(theano.config.floatX).max).flatten())[(m.shape[0] * (m.shape[0]+1)) // 2:]
 
+        # function for getting the merge scores (cosine distance) for neurons
         score_merges = theano.function([m], m_ranks)
 
         # greedy layer-wise training
         layer_greedy = [ae.indexed_train_func(0, learning_rate, x, batch_size, lambda  x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders)]
+        # fintune is done by optimizing cross-entropy between x and reconstructed_x
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+        # actual fine tuning using softmax error + reconstruction error
         combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
 
         # set up cost function
@@ -362,8 +369,10 @@ class MergeIncrementingAutoencoder(Transformer):
         # increment a subtensor by a certain value
         for i, nnlayer in enumerate(self._autoencoder.layers):
             if i == 0:
-                mi_updates += [(nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T))]
-                mi_updates += [(nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate*T.grad(mi_cost,nnlayer.b)[nnlayer.idx]))]
+                mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
+                mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
             else:
                 mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
                 mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
@@ -382,8 +391,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given, mode='FAST_COMPILE'
-                                                                                                           '')
+        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given, mode='FAST_COMPILE')
 
         def merge_model(pool_indexes, merge_percentage, inc_percentage):
             '''

@@ -279,9 +279,13 @@ class MergeIncrementingAutoencoder(Transformer):
     def __init__(self, layers, corruption_level, rng, lam, iterations):
         super().__init__(layers, 1, False)
 
+        # used for optimizing as a whole (not layer wise)
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        # used for greedy layer-wise training
         self._layered_autoencoders = [ DeepAutoencoder([ self.layers[i] ], corruption_level, rng) for i, layer in enumerate(self.layers[:-1]) ]
+        # optimize using softmax error
         self._softmax = Softmax(layers, 1)
+        # optimize using combined objective
         self._combined_objective = CombinedObjective(layers, corruption_level, rng, lam, iterations)
         self.lam = lam
         self.iterations = iterations
@@ -290,9 +294,11 @@ class MergeIncrementingAutoencoder(Transformer):
     def process(self, x, y):
         self._x = x
         self._y = y
+        # process data and define cost calculations
         self._autoencoder.process(x, y)
         self._softmax.process(x, y)
         self._combined_objective.process(x, y)
+        # greedy layer-wise cost calculation
         for ae in self._layered_autoencoders:
             ae.process(x, y)
 
@@ -317,8 +323,10 @@ class MergeIncrementingAutoencoder(Transformer):
 
         for i, nnlayer in enumerate(self._autoencoder.layers):
             if i == 0:
-                mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
-                mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],   - learning_rate * T.grad(mi_cost, nnlayer.b)[nnlayer.idx]))     ]
+                mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
+                mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost, nnlayer.b)[nnlayer.idx])) ]
             else:
                 mi_updates += [ (nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W)) ]
                 mi_updates += [ (nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost, nnlayer.b)) ]
