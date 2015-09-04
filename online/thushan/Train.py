@@ -46,7 +46,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(in_size, hid_sizes, out_size,batch_size):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -57,12 +57,26 @@ def make_model(in_size, hid_sizes, out_size,batch_size):
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
-    model = DLModels.DeepReinforcementLearningModel(
-        layers, corruption_level, rng, iterations, lam, batch_size, pool_size, policy)
-
+    if model_type == 'DeepRL':
+        model = DLModels.DeepReinforcementLearningModel(
+            layers, corruption_level, rng, iterations, lam, batch_size, pool_size, policy)
+    elif model_type == 'SAE':
+        model = DLModels.StackedAutoencoderWithSoftmax(
+            layers,corruption_level,rng,lam,iterations)
     model.process(T.matrix('x'), T.ivector('y'))
 
     return model
+
+def format_array_to_print(arr, num_ele=5):
+    s = ''
+    for i in range(num_ele):
+        s += '%.3f' %(arr[i]) + ", "
+
+    s += '\t...\t'
+    for i in range(-num_ele,0):
+        s += '%.3f' %(arr[i]) + ", "
+
+    return s
 
 def run():
 
@@ -72,38 +86,45 @@ def run():
     epochs = 500
     theano.config.floatX = 'float32'
 
-    deepRLModel = make_model(784, [750,500,250], 10, batch_size)
-    input_layer_size = deepRLModel.layers[0].initial_size[0]
+    model = make_model('SAE',784, [750,500,250], 10, batch_size)
+    input_layer_size = model.layers[0].initial_size[0]
 
     print('loading data ...')
     data_file, valid_file, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-    for arc in range(deepRLModel.arcs):
+    for arc in range(model.arcs):
 
-        results_func = deepRLModel.error_func
+        get_act_vs_pred_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
+        results_func = model.error_func
+        train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
 
-        train_func = deepRLModel.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
         validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
 
         print('training data ...')
         try:
             for epoch in range(epochs):
                 print('Training Epoch %d ...' % epoch)
-                for batch in range(math.ceil(data_file[2]/batch_size)):
+                for t_batch in range(math.ceil(data_file[2]/batch_size)):
                     print('')
-                    print('training epoch %d and batch %d' % (epoch, batch))
+                    print('training epoch %d and batch %d' % (epoch, t_batch))
                     from collections import Counter
-                    dist = Counter(data_file[1][batch * batch_size : (batch + 1) * batch_size].eval())
+                    dist = Counter(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval())
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
-                    deepRLModel.set_distribution(distribution)
+                    # model.set_distribution(distribution)
 
-                    train_func(batch)
+                    [greedy_costs, fine_cost, comb_cost] = train_func(t_batch)
+                    print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ', comb_cost)
 
-                    if batch==25:
-                        for batch in range(math.ceil(valid_file[2]/batch_size)):
-                            validate_results = validate_func(batch)
-                            print("epoch %d and batch %d Validation error: %f" % (epoch, batch, validate_results))
-
+                    if t_batch%10==0:
+                        for v_batch in range(math.ceil(valid_file[2]/batch_size)):
+                            validate_results = validate_func(v_batch)
+                            act_pred_results = get_act_vs_pred_func(v_batch)
+                            print("epoch %d and batch %d" % (epoch, v_batch))
+                            print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
+                                  ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
+                            print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
+                            print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
+                            print(validate_results)
         except StopIteration:
             pass
 

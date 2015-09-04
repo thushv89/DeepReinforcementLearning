@@ -119,7 +119,6 @@ class DeepAutoencoder(Transformer):
         self.cost = None
         # Need to find out what cost_vector is used for...
         self.cost_vector = None
-        self.validation_error = None
 
     def process(self, x, y):
         self._x = x
@@ -155,7 +154,7 @@ class DeepAutoencoder(Transformer):
 
     def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=None, updates=updates, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=updates, transformed_x=transformed_x)
 
     def indexed_train_func(self, arc, learning_rate, x, batch_size, transformed_x):
 
@@ -215,6 +214,7 @@ class Softmax(Transformer):
         super().__init__(layers, 1, True)
 
         self.theta = None
+        self.results = None
         self._errors = None
         self.cost_vector = None
         self.cost = None
@@ -226,10 +226,10 @@ class Softmax(Transformer):
 
         p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
 
-        results = T.argmax(p_y_given_x, axis=1)
+        self.results = T.argmax(p_y_given_x, axis=1)
 
         self.theta = [param for layer in self.layers for param in [layer.W, layer.b]]
-        self._errors = T.mean(T.neq(results,y))
+        self._errors = T.mean(T.neq(self.results,y))
         self.cost_vector = -T.log(p_y_given_x)[T.arange(y.shape[0]), y]
         self.cost = T.mean(self.cost_vector)
 
@@ -250,6 +250,9 @@ class Softmax(Transformer):
 
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self.make_func(x,y,batch_size,self._errors,None, transformed_x)
+
+    def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x,y,batch_size,[self._y,self.results],None, transformed_x)
 
 class Pool(object):
 
@@ -313,6 +316,62 @@ class Pool(object):
         self._update(self.position, x, y)
         self.size = min(self.size + x.shape[0], self.max_size)
         self.position = (self.position + x.shape[0]) % self.max_size
+
+class StackedAutoencoderWithSoftmax(Transformer):
+
+    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
+
+    def __init__(self, layers, corruption_level, rng, lam, iterations):
+        super().__init__(layers, 1, True)
+
+        self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        self._layered_autoencoders = [DeepAutoencoder([self.layers[i]], corruption_level, rng)
+                                       for i, layer in enumerate(self.layers[:-1])] #[:-1] gets all items except last
+        self._softmax = Softmax(layers,iterations)
+        self._combined_objective = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        self.lam = lam
+        self.iterations = iterations
+        self.rng = np.random.RandomState(0)
+
+
+    def process(self, x, y):
+        self._x = x
+        self._y = y
+
+        self._autoencoder.process(x,y)
+        self._softmax.process(x,y)
+        self._combined_objective.process(x,y)
+
+        for ae in self._layered_autoencoders:
+            ae.process(x, y)
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity):
+
+        layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
+        finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+        combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
+
+        def train_all(batch_id):
+            greedy_costs = []
+            for i in range(len(self.layers)-1):
+                greedy_costs.append(layer_greedy[i](int(batch_id)))
+            finetune_cost = finetune(batch_id)
+            comb_obj_cost = combined_objective_tune(batch_id)
+            return [greedy_costs, finetune_cost, comb_obj_cost]
+
+        return train_all
+
+    def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
+        return self._softmax.validate_func(arc, x, y,batch_size)
+
+    def error_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.error_func(arc, x, y, batch_size)
+
+    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+
+    def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
 class MergeIncrementingAutoencoder(Transformer):
 
@@ -542,6 +601,7 @@ class CombinedObjective(Transformer):
             iterations = self.iterations
 
         combined_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+        #combined_cost = self._softmax.cost + self.lam * 0.5
 
         theta = []
         for layer in self.layers[:-1]:
@@ -549,8 +609,8 @@ class CombinedObjective(Transformer):
         theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
 
         update = [(param, param - learning_rate * grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
-        func = self.make_func(x, y, batch_size, None, update, transformed_x)
-        return iterations_shim(func, iterations)
+        comb_obj_finetune_func = self.make_func(x, y, batch_size, combined_cost, update, transformed_x)
+        return iterations_shim(comb_obj_finetune_func, iterations)
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y, batch_size, transformed_x)
@@ -558,6 +618,11 @@ class CombinedObjective(Transformer):
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.error_func(arc, x, y, batch_size, transformed_x)
 
+    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+
+    def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
 class DeepReinforcementLearningModel(Transformer):
 
@@ -713,5 +778,9 @@ class DeepReinforcementLearningModel(Transformer):
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.error_func(arc, x, y, batch_size)
 
+    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
 
+    def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
