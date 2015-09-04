@@ -22,17 +22,13 @@ def chained_output(layers, x):
     return functools.reduce(lambda acc, layer: layer.output(acc), layers, x)
 
 def iterations_shim(train, iterations):
-    '''
-    Repeated calls to the same function
-    :param func: The function
-    :param iterations: number of times to call the function
-    :return:
-    '''
-
-    def function(i):
+    ''' Repeat calls to this function '''
+    def func(i):
         for _ in range(iterations):
-            train(i)
-    return function
+            result = train(i)
+        return result
+
+    return func
 
 
 class Transformer(object):
@@ -219,12 +215,14 @@ class Softmax(Transformer):
         self.cost_vector = None
         self.cost = None
         self.iterations = iterations
+        self.last_out = None
         self.p_y_given_x = None
 
     def process(self, x, y):
         self._x = x
         self._y = y
 
+        self.last_out = chained_output(self.layers, x);
         self.p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
 
         self.results = T.argmax(self.p_y_given_x, axis=1)
@@ -243,8 +241,12 @@ class Softmax(Transformer):
 
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
 
-        train = self.make_func(x,y,batch_size,self.p_y_given_x,updates,transformed_x)
+        train = self.make_func(x,y,batch_size,self.results,updates,transformed_x)
+        ''' all print statements for this method returned None when I used iterations_shim'''
+        ''' because func inside iteration_shim didn't return anything at the moment '''
         return iterations_shim(train, iterations)
+
+
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self.make_func(x,y,batch_size,self.cost,None,transformed_x)
@@ -358,9 +360,9 @@ class StackedAutoencoderWithSoftmax(Transformer):
             for i in range(len(self.layers)-1):
                 greedy_costs.append(layer_greedy[i](int(batch_id)))
             finetune_cost = finetune(batch_id)
-            probs = softmax_train_func(batch_id)
+            errors = softmax_train_func(batch_id)
             #comb_obj_cost = combined_objective_tune(batch_id)
-            return [greedy_costs, finetune_cost, probs]
+            return [greedy_costs, finetune_cost, errors]
 
         return train_all
 
@@ -370,7 +372,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.error_func(arc, x, y, batch_size)
 
-    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
+    def get_y_labels(self, arc, x, y, batch_size, transformed_x = identity):
         return self.make_func(x, y, batch_size, self._y, None, transformed_x)
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):

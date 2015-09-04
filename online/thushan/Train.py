@@ -53,7 +53,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
     layers = []
     corruption_level = 0.2
     lam = 0.2
-    iterations = 3
+    iterations = 25
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -63,6 +63,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
     elif model_type == 'SAE':
         model = DLModels.StackedAutoencoderWithSoftmax(
             layers,corruption_level,rng,lam,iterations)
+
     model.process(T.matrix('x'), T.ivector('y'))
 
     return model
@@ -94,6 +95,9 @@ def run():
 
     for arc in range(model.arcs):
 
+        get_train_y_func = model.get_y_labels(arc, data_file[0], data_file[1], batch_size)
+        get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
+
         get_act_vs_pred_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
         results_func = model.error_func
         train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
@@ -116,16 +120,23 @@ def run():
                     print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
                     print(probs)
 
+                    train_y_labels = get_train_y_func(t_batch)
+                    act_vs_pred = get_act_vs_pred_train_func(t_batch)
+                    print('Actual y data for train batch: ',format_array_to_print(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval(),5)
+                                  ,' ', data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].shape)
+                    print('Data sent to DLModels train: ',format_array_to_print(train_y_labels,5),' ', train_y_labels.shape)
+                    print('Predicted data train: ', format_array_to_print(act_vs_pred[1],5), ' ', act_vs_pred[1].shape)
+
                     if t_batch%10==0:
                         for v_batch in range(math.ceil(valid_file[2]/batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
                             print("epoch %d and batch %d" % (epoch, v_batch))
-                            print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
-                                  ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
-                            print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
-                            print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
-                            print(validate_results)
+                            #print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
+                            #      ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
+                            #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
+                            #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
+                            #print(validate_results)
         except StopIteration:
             pass
 
