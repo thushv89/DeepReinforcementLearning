@@ -53,7 +53,7 @@ def make_model(in_size, hid_sizes, out_size,batch_size):
     layers = []
     corruption_level = 0.2
     lam = 0.2
-    iterations = 10
+    iterations = 3
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)

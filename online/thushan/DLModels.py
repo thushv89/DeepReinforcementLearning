@@ -431,10 +431,11 @@ class MergeIncrementingAutoencoder(Transformer):
 
                 # x and y coordinates created out of index (assume these are the two nodes
                 # to merge)
-                # what's the criteria for this?
                 x_i, y_i = index % layer_weights.shape[0], index // layer_weights.shape[0]
 
                 # if x_i and y_i are not in "used"`  list
+                # 'used' contains merged nodes
+                # 'empty_slots' are the remaining nodes after the merge
                 if x_i not in used and y_i not in used:
                     # update weights and bias with avg
                     layer_weights[x_i] = (layer_weights[x_i] + layer_weights[y_i])/2
@@ -448,7 +449,7 @@ class MergeIncrementingAutoencoder(Transformer):
             new_size = layer_weights.shape[0] + inc_count - len(empty_slots)
             current_size = layer_weights.shape[0]
 
-            # if new size is less than current...
+            # if new size is less than current... that is reduce operation
             if new_size < current_size:
                 non_empty_slots = sorted(list(set(range(0,current_size)) - set(empty_slots)), reverse=True)[:len(empty_slots)]
                 prev_map = dict(zip(empty_slots, non_empty_slots))
@@ -458,17 +459,23 @@ class MergeIncrementingAutoencoder(Transformer):
                     layer_weights[src] = np.asarray(self.rng.uniform(low=init, high=init, size=layer_weights.shape[1]), dtype=theano.config.floatX)
 
                 empty_slots = []
-
+            # increment operation
             else:
                 prev_map = {}
 
+            # new_size: new layer size after increment/reduce op
+            # prev_dimension: size of input layer
             new_layer_weights = np.zeros((new_size,prev_dimensions), dtype = theano.config.floatX)
+            # the existing values from layer_weights copied to new layer weights
+            # and it doesn't matter if layer_weights.shape[0]<new_layer_weights.shape[0] it'll assign values until it reaches the end
             new_layer_weights[:layer_weights.shape[0], :layer_weights.shape[1]] = layer_weights[:new_layer_weights.shape[0], :new_layer_weights.shape[1]]
 
+            # get all empty_slots that are < new_size  +  list(prev_size->new_size)
             empty_slots = [slot for slot in empty_slots if slot < new_size] + list(range(layer_weights.shape[0],new_size))
             new_layer_weights[empty_slots] = np.asarray(self.rng.uniform(low=-init, high=init, size=(len(empty_slots), prev_dimensions)), dtype=theano.config.floatX)
 
-            layer_bias.resize(new_size)
+            # fills missing entries with zero
+            layer_bias.resize(new_size, refcheck=False)
 
             layer_bias_prime = self.layers[0].b_prime.get_value().copy()
             layer_bias_prime.resize(prev_dimensions)

@@ -45,14 +45,9 @@ if __name__ == '__main__':
     x = 25 // 2
     val = np.finfo(config.floatX)'''
 
-    update = [([2,3], [4,5])]
-    print (len(update))
-    update += [([1,1], [1,1])]
-    print(len(update))
-    print(update)
+    arr = np.ones((150,50))
+    arr2 = np.ones((100,50))*2
 
-    arr = [1,2,3,4,5]
-
-    arr2 = [val for i,val in enumerate(arr[:-1])]
+    arr[:100,: 50] = arr2[:150, :50]
 
     print(arr2)
