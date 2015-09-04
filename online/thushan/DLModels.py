@@ -21,7 +21,7 @@ def chained_output(layers, x):
     '''
     return functools.reduce(lambda acc, layer: layer.output(acc), layers, x)
 
-def iterations_shim(func, iterations):
+def iterations_shim(train, iterations):
     '''
     Repeated calls to the same function
     :param func: The function
@@ -31,7 +31,7 @@ def iterations_shim(func, iterations):
 
     def function(i):
         for _ in range(iterations):
-            func(i)
+            train(i)
     return function
 
 
@@ -219,18 +219,19 @@ class Softmax(Transformer):
         self.cost_vector = None
         self.cost = None
         self.iterations = iterations
+        self.p_y_given_x = None
 
     def process(self, x, y):
         self._x = x
         self._y = y
 
-        p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
+        self.p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
 
-        self.results = T.argmax(p_y_given_x, axis=1)
+        self.results = T.argmax(self.p_y_given_x, axis=1)
 
         self.theta = [param for layer in self.layers for param in [layer.W, layer.b]]
         self._errors = T.mean(T.neq(self.results,y))
-        self.cost_vector = -T.log(p_y_given_x)[T.arange(y.shape[0]), y]
+        self.cost_vector = -T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]
         self.cost = T.mean(self.cost_vector)
 
         return None
@@ -242,7 +243,7 @@ class Softmax(Transformer):
 
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
 
-        train = self.make_func(x,y,batch_size,None,updates,transformed_x)
+        train = self.make_func(x,y,batch_size,self.p_y_given_x,updates,transformed_x)
         return iterations_shim(train, iterations)
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
@@ -340,7 +341,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         self._autoencoder.process(x,y)
         self._softmax.process(x,y)
-        self._combined_objective.process(x,y)
+        #self._combined_objective.process(x,y)
 
         for ae in self._layered_autoencoders:
             ae.process(x, y)
@@ -349,15 +350,17 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
-        combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
+        softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
+        #combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
 
         def train_all(batch_id):
             greedy_costs = []
             for i in range(len(self.layers)-1):
                 greedy_costs.append(layer_greedy[i](int(batch_id)))
             finetune_cost = finetune(batch_id)
-            comb_obj_cost = combined_objective_tune(batch_id)
-            return [greedy_costs, finetune_cost, comb_obj_cost]
+            probs = softmax_train_func(batch_id)
+            #comb_obj_cost = combined_objective_tune(batch_id)
+            return [greedy_costs, finetune_cost, probs]
 
         return train_all
 

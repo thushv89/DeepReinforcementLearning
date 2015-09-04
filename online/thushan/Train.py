@@ -112,8 +112,9 @@ def run():
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
                     # model.set_distribution(distribution)
 
-                    [greedy_costs, fine_cost, comb_cost] = train_func(t_batch)
-                    print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ', comb_cost)
+                    [greedy_costs, fine_cost, probs] = train_func(t_batch)
+                    print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
+                    print(probs)
 
                     if t_batch%10==0:
                         for v_batch in range(math.ceil(valid_file[2]/batch_size)):
