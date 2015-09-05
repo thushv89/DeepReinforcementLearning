@@ -10,6 +10,8 @@ from online.thushan import NNLayer
 from online.thushan import RLPolicies
 import os
 import math
+import logging
+
 
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
     '''' Load data into shared variables '''
@@ -28,9 +30,9 @@ def load_from_pickle(filename):
     with open(filename, 'rb') as handle:
         train, valid, test = pickle.load(handle, encoding='latin1')
 
-        train = make_shared(train[0], train[1], 'train', True, 255.0)
-        valid = make_shared(valid[0], valid[1], 'valid', True, 255.0)
-        test  = make_shared(test[0], test[1], 'test', True, 255.0)
+        train = make_shared(train[0], train[1], 'train', True, 1.0)
+        valid = make_shared(valid[0], valid[1], 'valid', True, 1.0)
+        test  = make_shared(test[0], test[1], 'test', True, 1.0)
 
         return train, valid, test
 
@@ -80,6 +82,7 @@ def format_array_to_print(arr, num_ele=5):
 
 def run():
 
+    logging.basicConfig(filename="debug.log", level=logging.DEBUG)
     distribution = []
     learning_rate = 0.1
     batch_size = 1000
@@ -115,9 +118,14 @@ def run():
                     distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
                     # model.set_distribution(distribution)
 
-                    [greedy_costs, fine_cost, probs] = train_func(t_batch)
+                    [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
                     print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-                    print(probs)
+                    #print(probs)
+                    for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
+                        logging.info(list(x))
+                        logging.info(list(out))
+                        logging.info(list(y_as_vec))
+                        logging.info(cost)
 
                     train_y_labels = get_train_y_func(t_batch)
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
