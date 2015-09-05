@@ -241,7 +241,8 @@ class Softmax(Transformer):
 
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
 
-        train = self.make_func(x,y,batch_size,self.results,updates,transformed_x)
+        train = self.make_func(x,y,batch_size,self.last_out,updates,transformed_x)
+
         ''' all print statements for this method returned None when I used iterations_shim'''
         ''' because func inside iteration_shim didn't return anything at the moment '''
         return iterations_shim(train, iterations)

@@ -41,7 +41,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
         if i==0: continue
         layers.append(NNLayer.Layer(hid_sizes[i-1],hid_sizes[i], False, None, None, None))
 
-    layers.append(NNLayer.Layer(hid_sizes[-1], out_size, False, None, None, None))
+    layers.append(NNLayer.Layer(hid_sizes[-1], out_size, True, None, None, None))
     print('Finished Creating Layers')
 
     return layers
@@ -50,10 +50,9 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
-    layers = []
     corruption_level = 0.2
     lam = 0.2
-    iterations = 25
+    iterations = 10
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -127,7 +126,7 @@ def run():
                     print('Data sent to DLModels train: ',format_array_to_print(train_y_labels,5),' ', train_y_labels.shape)
                     print('Predicted data train: ', format_array_to_print(act_vs_pred[1],5), ' ', act_vs_pred[1].shape)
 
-                    if t_batch%10==0:
+                    if t_batch%50==0:
                         for v_batch in range(math.ceil(valid_file[2]/batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
@@ -136,7 +135,7 @@ def run():
                             #      ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
                             #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
                             #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
-                            #print(validate_results)
+                            print(validate_results)
         except StopIteration:
             pass
 

@@ -14,7 +14,7 @@ class Layer(object):
         self.idx = T.ivector('idx_' + self.name)
 
         if zero:
-            self.W = theano.shared(np.zeros((input_size, output_size)), dtype=theano.config.floatX)
+            self.W = theano.shared(np.zeros((input_size, output_size), dtype=theano.config.floatX))
         elif W!=None:
             self.W = theano.shared(W)
         else:
