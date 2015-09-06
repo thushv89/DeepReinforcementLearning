@@ -7,6 +7,7 @@ import theano
 import theano.tensor as T
 
 import numpy as np
+import pydot
 
 def identity(x):
     return x
@@ -457,6 +458,12 @@ class MergeIncrementingAutoencoder(Transformer):
                                 - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
                 mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
+                print('----------------------------------------')
+                theano.printing.debugprint(T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T))
+                theano.printing.pydotprint(T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T), outfile="pics/mi_update_pydotprint_prediction.png", var_with_name_simple=True)
+                print('---------------------------------------')
             else:
                 mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
                 mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
@@ -594,6 +601,7 @@ class MergeIncrementingAutoencoder(Transformer):
             if empty_slots:
                 for _ in range(int(self.iterations)):
                     for i in pool_indexes:
+                        #theano.printing.debugprint(mi_train)
                         mi_train(i, empty_slots)
             else:
                 for i in pool_indexes:
@@ -802,8 +810,8 @@ class DeepReinforcementLearningModel(Transformer):
     def error_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.error_func(arc, x, y, batch_size)
 
-    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
-        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+    def get_y_labels(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.get_y_labels(arc, x, y, batch_size)
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)

@@ -445,6 +445,7 @@ class MergeIncrementingAutoencoder(Transformer):
             if empty_slots:
                 for _ in range(self.iterations):
                     for i in pool_indexes:
+                        theano.pp(mi_train)
                         mi_train(i, empty_slots)
             else:
                 for i in pool_indexes:

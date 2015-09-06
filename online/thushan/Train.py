@@ -54,7 +54,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
 
     corruption_level = 0.2
     lam = 0.2
-    iterations = 10
+    iterations = 1
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -85,17 +85,18 @@ def run():
     logging.basicConfig(filename="debug.log", level=logging.DEBUG)
     distribution = []
     learning_rate = 0.1
-    batch_size = 1000
+    batch_size = 100
     epochs = 500
     theano.config.floatX = 'float32'
-
-    model = make_model('SAE',784, [750,500,250], 10, batch_size)
+    modelType = 'DeepRL'
+    model = make_model(modelType,784, [750,500,250], 10, batch_size)
     input_layer_size = model.layers[0].initial_size[0]
 
     print('loading data ...')
     data_file, valid_file, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
     for arc in range(model.arcs):
+
 
         get_train_y_func = model.get_y_labels(arc, data_file[0], data_file[1], batch_size)
         get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
@@ -113,21 +114,27 @@ def run():
                 for t_batch in range(math.ceil(data_file[2]/batch_size)):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, t_batch))
-                    from collections import Counter
-                    dist = Counter(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval())
-                    distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
-                    # model.set_distribution(distribution)
 
-                    [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
-                    print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-                    #print(probs)
-                    #for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
-                    #    logging.info(list(x))
-                    #    logging.info(list(out))
-                    #    logging.info(list(y_as_vec))
-                    #    logging.info(cost)
+                    if modelType == 'DeepRL':
+                        from collections import Counter
+                        dist = Counter(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval())
+                        distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
+                        model.set_distribution(distribution)
+                        train_func(t_batch)
+
+
+                    if modelType == 'SAE':
+                        [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
+                        print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
+                        #print(probs)
+                        #for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
+                        #    logging.info(list(x))
+                        #    logging.info(list(out))
+                        #    logging.info(list(y_as_vec))
+                        #    logging.info(cost)
 
                     train_y_labels = get_train_y_func(t_batch)
+
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
                     print('Actual y data for train batch: ',format_array_to_print(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval(),5)
                                   ,' ', data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].shape)
