@@ -217,6 +217,7 @@ class Softmax(Transformer):
         self.iterations = iterations
         self.last_out = None
         self.p_y_given_x = None
+        self.y_mat = None
 
     def process(self, x, y):
         self._x = x
@@ -234,22 +235,20 @@ class Softmax(Transformer):
 
         return None
 
-    def get_y_as_vec_func(self, x, y, batch_size):
+    def get_y_as_vec_func(self, y,batch_size):
 
-        y_mat = theano.shared(np.zeros((batch_size,10),dtype=theano.config.floatX))
-        one_vec = T.vector('one_vec')
+        self.y_mat = theano.shared(np.zeros((batch_size,10),dtype=theano.config.floatX))
+        one_vec = T.ones_like(self._y)
 
         idx = T.iscalar('idx')
 
-        y_mat_update = [(y_mat, T.set_subtensor(y_mat[T.arange(self._y.shape[0]),self._y],one_vec))]
+        y_mat_update = [(self.y_mat, T.inc_subtensor(self.y_mat[T.arange(self._y.shape[0]), self._y],1))]
+        #y_mat_update = [(y,y+1) for i in y_mat.shape[0] for y in y_mat[i]]
         given = {
-            y_mat : theano.shared(np.zeros((batch_size,10),dtype=theano.config.floatX)),
-            one_vec : theano.shared(np.ones((batch_size,), dtype=theano.config.floatX)),
             self._y : y[idx * batch_size : (idx + 1) * batch_size]
         }
 
-        return theano.function(inputs=[idx],outputs=y_mat, updates=y_mat_update, givens=given, on_unused_input='warn')
-
+        return theano.function(inputs=[idx],outputs=[], updates=y_mat_update, givens=given, on_unused_input='warn')
 
     def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations=None):
 
@@ -259,10 +258,9 @@ class Softmax(Transformer):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
 
         train = self.make_func(x,y,batch_size,[self._x, self.last_out, self.cost_vector],updates,transformed_x)
-        y_vec_func = self.get_y_as_vec_func(x,y,batch_size)
         ''' all print statements for this method returned None when I used iterations_shim'''
         ''' because func inside iteration_shim didn't return anything at the moment '''
-        return [iterations_shim(train, iterations),y_vec_func]
+        return iterations_shim(train, iterations)
 
 
 
@@ -370,8 +368,8 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
-        softmax_train_func,softmax_get_y_vec = self._softmax.train_func(0,learning_rate,x,y,batch_size)
-
+        softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
+        softmax_get_y_mat = self._softmax.get_y_as_vec_func(y,batch_size)
         #combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
 
         def train_all(batch_id):
@@ -380,9 +378,10 @@ class StackedAutoencoderWithSoftmax(Transformer):
                 greedy_costs.append(layer_greedy[i](int(batch_id)))
             finetune_cost = finetune(batch_id)
             errors = softmax_train_func(batch_id)
-            y_vec = softmax_get_y_vec(batch_id)
+            softmax_get_y_mat(batch_id)
+            y_mat_val = self._softmax.y_mat.get_value()
             #comb_obj_cost = combined_objective_tune(batch_id)
-            return [greedy_costs, finetune_cost, errors, y_vec]
+            return [greedy_costs, finetune_cost, errors, y_mat_val]
 
         return train_all
 

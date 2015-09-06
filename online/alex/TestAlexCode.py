@@ -5,6 +5,8 @@ import itertools
 from collections import defaultdict
 import numpy as np
 from theano import config
+import theano
+import theano.tensor as T
 
 class DiscreteRL(object):
     ''' Q learning model '''
@@ -48,6 +50,20 @@ if __name__ == '__main__':
     arr = np.ones((150,50))
     arr2 = np.ones((100,50))*2
 
-    arr[:100,: 50] = arr2[:150, :50]
+    
+    y = T.ivector('y')
+    y_mat = theano.shared(np.zeros((5,10),dtype=theano.config.floatX),borrow=True)
 
-    print(arr2)
+    idx = T.iscalar('idx')
+
+    y_mat_update = [(y_mat, T.inc_subtensor(y_mat[[0,1,2,3,4],[2,2,3,4,2]],1))]
+        #y_mat_update = [(y,y+1) for i in y_mat.shape[0] for y in y_mat[i]]
+    given = {
+        y : [2,3,4,5,6]
+    }
+
+    func = theano.function(inputs=[],outputs=[], updates=y_mat_update, givens=given, on_unused_input='warn')
+    #func()
+    func()
+    y_new_mat = y_mat.get_value()
+    print('')
