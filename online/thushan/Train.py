@@ -121,11 +121,11 @@ def run():
                     [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
                     print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
                     #print(probs)
-                    for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
-                        logging.info(list(x))
-                        logging.info(list(out))
-                        logging.info(list(y_as_vec))
-                        logging.info(cost)
+                    #for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
+                    #    logging.info(list(x))
+                    #    logging.info(list(out))
+                    #    logging.info(list(y_as_vec))
+                    #    logging.info(cost)
 
                     train_y_labels = get_train_y_func(t_batch)
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
