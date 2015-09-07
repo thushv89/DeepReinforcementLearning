@@ -11,7 +11,7 @@ from online.thushan import RLPolicies
 import os
 import math
 import logging
-
+import numpy as np
 
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
     '''' Load data into shared variables '''
@@ -142,15 +142,22 @@ def run():
                     print('Predicted data train: ', format_array_to_print(act_vs_pred[1],5), ' ', act_vs_pred[1].shape)
 
                     if t_batch%50==0:
+                        v_errors = []
                         for v_batch in range(math.ceil(valid_file[2]/batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
-                            print("epoch %d and batch %d" % (epoch, v_batch))
+
                             #print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
                             #      ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
                             #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
                             #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
-                            print(validate_results)
+                            v_errors.append(validate_results)
+
+                        for i,v_err in enumerate(v_errors):
+                            print(i,": ",v_err),
+
+                        print(np.mean(v_errors))
+
         except StopIteration:
             pass
 

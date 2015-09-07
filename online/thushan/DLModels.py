@@ -7,7 +7,6 @@ import theano
 import theano.tensor as T
 
 import numpy as np
-import pydot
 
 def identity(x):
     return x
@@ -458,12 +457,10 @@ class MergeIncrementingAutoencoder(Transformer):
                                 - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
                 mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
-                print('----------------------------------------')
+                '''print('----------------------------------------')
                 theano.printing.debugprint(T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T))
-                theano.printing.pydotprint(T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
-                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T), outfile="pics/mi_update_pydotprint_prediction.png", var_with_name_simple=True)
-                print('---------------------------------------')
+                print('---------------------------------------')'''
             else:
                 mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
                 mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
@@ -482,7 +479,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given, mode='FAST_COMPILE')
+        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
 
         def merge_model(pool_indexes, merge_percentage, inc_percentage):
             '''
@@ -556,6 +553,8 @@ class MergeIncrementingAutoencoder(Transformer):
             # new_size: new layer size after increment/reduce op
             # prev_dimension: size of input layer
             new_layer_weights = np.zeros((new_size,prev_dimensions), dtype = theano.config.floatX)
+            print('(',layer_weights.shape[1],'->',layer_weights.shape[1],')')
+
             # the existing values from layer_weights copied to new layer weights
             # and it doesn't matter if layer_weights.shape[0]<new_layer_weights.shape[0] it'll assign values until it reaches the end
             new_layer_weights[:layer_weights.shape[0], :layer_weights.shape[1]] = layer_weights[:new_layer_weights.shape[0], :new_layer_weights.shape[1]]
