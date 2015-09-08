@@ -5,9 +5,9 @@ __author__ = 'Thushan Ganegedara'
 import pickle
 import theano
 import theano.tensor as T
-from online.thushan import DLModels
-from online.thushan import NNLayer
-from online.thushan import RLPolicies
+import DLModels
+import NNLayer
+import RLPolicies
 import os
 import math
 import logging
@@ -154,7 +154,8 @@ def run():
                             v_errors.append(validate_results)
 
                         for i,v_err in enumerate(v_errors):
-                            print(i,": ",v_err),
+                            print(i,": ",v_err,end=', ')
+                            print()
 
                         print(np.mean(v_errors))
 

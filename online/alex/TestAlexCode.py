@@ -7,6 +7,7 @@ import numpy as np
 from theano import config
 import theano
 import theano.tensor as T
+import math
 
 class DiscreteRL(object):
     ''' Q learning model '''
@@ -40,6 +41,26 @@ class DiscreteRL(object):
         self.actions = list(self.Action)
         states = [ s for s in itertools.product(*([list(self.State)] * self.history)) ]
         print("")
+
+    def gen_dist(self):
+        elements = 1000
+        gran = 10
+        def kernel(a, b):
+            """ Squared exponential kernel """
+            sqdist = np.sum(a ** 2, 1).reshape(-1, 1) + np.sum(b ** 2, 1) - 2 * np.dot(a, b.T)
+            return np.exp(-0.5 * sqdist)
+
+        # number of samples
+        n = math.ceil(elements / gran)
+        Xtest = np.linspace(0, 10, n).reshape(-1, 1)
+        L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
+
+        # massage the data to get a good distribution
+        f_prior = np.dot(L, np.random.normal(size=(n, 10000)))
+        f_prior -= f_prior.min()
+        f_prior = f_prior ** math.ceil(math.sqrt(10000))
+        f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
+
 if __name__ == '__main__':
     '''drl = DiscreteRL()
     data = defaultdict(list)
@@ -66,4 +87,7 @@ if __name__ == '__main__':
     #func()
     func()
     y_new_mat = y_mat.get_value()
+
+    d = DiscreteRL()
+    d.gen_dist()
     print('')

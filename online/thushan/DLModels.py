@@ -452,9 +452,14 @@ class MergeIncrementingAutoencoder(Transformer):
         # calculating merge_inc updates
         # increment a subtensor by a certain value
         for i, nnlayer in enumerate(self._autoencoder.layers):
+            # do the inc_subtensor update only for the first layer
+            # update the rest of the layers normally
             if i == 0:
+                # removed ".T" in the T.grad operation. It seems having .T actually
+                # causes a dimension mismatch
+                print("mi_updates (debug): ", nnlayer.W.shape)
                 mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
-                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)) ]
+                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
                 mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
                 '''print('----------------------------------------')
@@ -553,7 +558,8 @@ class MergeIncrementingAutoencoder(Transformer):
             # new_size: new layer size after increment/reduce op
             # prev_dimension: size of input layer
             new_layer_weights = np.zeros((new_size,prev_dimensions), dtype = theano.config.floatX)
-            print('(',layer_weights.shape[1],'->',layer_weights.shape[1],')')
+            print('Old layer 1 size: ',layer_weights.shape[0])
+            print('New layer 1 size: ',new_layer_weights.shape[0])
 
             # the existing values from layer_weights copied to new layer weights
             # and it doesn't matter if layer_weights.shape[0]<new_layer_weights.shape[0] it'll assign values until it reaches the end
@@ -564,8 +570,9 @@ class MergeIncrementingAutoencoder(Transformer):
             new_layer_weights[empty_slots] = np.asarray(self.rng.uniform(low=-init, high=init, size=(len(empty_slots), prev_dimensions)), dtype=theano.config.floatX)
 
             # fills missing entries with zero
+            print('New layer 1 size (bias): ',layer_bias.shape[0])
             layer_bias.resize(new_size, refcheck=False)
-
+            print('New layer 1 size (bias): ',layer_bias.shape[0])
             layer_bias_prime = self.layers[0].b_prime.get_value().copy()
             layer_bias_prime.resize(prev_dimensions)
 
@@ -602,6 +609,7 @@ class MergeIncrementingAutoencoder(Transformer):
                     for i in pool_indexes:
                         #theano.printing.debugprint(mi_train)
                         mi_train(i, empty_slots)
+
             else:
                 for i in pool_indexes:
                     combined_objective_tune(i)
