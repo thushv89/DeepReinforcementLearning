@@ -75,17 +75,14 @@ if __name__ == '__main__':
     y = T.ivector('y')
     y_mat = theano.shared(np.zeros((5,10),dtype=theano.config.floatX),borrow=True)
 
-    idx = T.iscalar('idx')
-
-    y_mat_update = [(y_mat, T.inc_subtensor(y_mat[[0,1,2,3,4],[2,2,3,4,2]],1))]
-        #y_mat_update = [(y,y+1) for i in y_mat.shape[0] for y in y_mat[i]]
     given = {
-        y : [2,3,4,5,6]
+        y : np.asarray([1,2,1,2,1])
     }
+    y_mat_update = [(y_mat, T.inc_subtensor(y_mat[T.arange(0,5),y],1))]
 
-    func = theano.function(inputs=[],outputs=[], updates=y_mat_update, givens=given, on_unused_input='warn')
-    #func()
-    func()
+    func = theano.function(inputs=[],outputs=[y_mat], updates=y_mat_update, givens=given, on_unused_input='warn')
+    y_mat_other = func()
+
     y_new_mat = y_mat.get_value()
 
     d = DiscreteRL()

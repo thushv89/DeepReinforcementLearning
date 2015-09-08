@@ -431,8 +431,11 @@ class MergeIncrementingAutoencoder(Transformer):
         m_cosine = (T.dot(m, m.T)/m_dists) / m_dists.dimshuffle(0,'x')
 
         # T.tri gives a matrix with 1 below diagonal (including diag) and zero elsewhere
-        # flatten() gives a view of tensor nDim-1 as the original and last dim having all the data in original
+        # flatten() gives a one dim tensor having all the data in original
         # finfo gives the maximum value of floats
+        # seems np.finfo(theano.config.floatX).max is used to make result
+        # it is unwise to use something like m_cosine * T.tri instead of this approach,
+        # as if some cosine_dist are zero they will be confused with the other zero items (resulted zeros of multiplication) in the argsort
         m_ranks = T.argsort((m_cosine - T.tri(m.shape[0]) * np.finfo(theano.config.floatX).max).flatten())[(m.shape[0] * (m.shape[0]+1)) // 2:]
 
         # function for getting the merge scores (cosine distance) for neurons
@@ -486,6 +489,9 @@ class MergeIncrementingAutoencoder(Transformer):
 
         mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
 
+        # the merge is done only for the first hidden layer.
+        # apperantly this has been tested against doing this for all layers.
+        # but doing this only to the first layer has achieved the best performance
         def merge_model(pool_indexes, merge_percentage, inc_percentage):
             '''
             Merge/Increment the batch using given pool of data
@@ -516,8 +522,9 @@ class MergeIncrementingAutoencoder(Transformer):
             if merge_count == 0 and inc_count == 0:
                 return
 
-            # get the highest ranked node indexes
+            # get the nodes ranked highest to lowest (merging order)
             for index in score_merges(layer_weights):
+                # all merges have been performed
                 if len(empty_slots) == merge_count:
                     break
 
