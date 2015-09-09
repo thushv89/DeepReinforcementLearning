@@ -86,6 +86,8 @@ if __name__ == '__main__':
 
     y_new_mat = y_mat.get_value()
 
-    d = DiscreteRL()
-    d.gen_dist()
+    new_arr = [1,2,3,4,5]
+
+    for i,val in enumerate(new_arr):
+        print(i)
     print('')

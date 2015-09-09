@@ -36,6 +36,17 @@ def load_from_pickle(filename):
 
         return train, valid, test
 
+def load_from_memmap(filename, row_count, col_count, start_row):
+
+    fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*start_row,shape=(row_count,col_count))
+    data = np.empty((row_count,col_count),dtype=np.float32)
+    data[:] = fp[:]
+
+    train = make_shared(data[:,:-1],data[:,-1],'train',True, 1.0)
+
+    return train
+
+
 def make_layers(in_size, hid_sizes, out_size, zero_last = False):
     layers = []
     layers.append(NNLayer.Layer(in_size, hid_sizes[0], False, None, None, None))
@@ -80,23 +91,11 @@ def format_array_to_print(arr, num_ele=5):
 
     return s
 
-def run():
 
-    logging.basicConfig(filename="debug.log", level=logging.DEBUG)
+def train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file):
     distribution = []
-    learning_rate = 0.1
-    batch_size = 100
-    epochs = 500
-    theano.config.floatX = 'float32'
-    modelType = 'DeepRL'
-    model = make_model(modelType,784, [750,500,250], 10, batch_size)
-    input_layer_size = model.layers[0].initial_size[0]
-
-    print('loading data ...')
-    data_file, valid_file, _ = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
     for arc in range(model.arcs):
-
 
         get_train_y_func = model.get_y_labels(arc, data_file[0], data_file[1], batch_size)
         get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
@@ -111,22 +110,22 @@ def run():
         try:
             for epoch in range(epochs):
                 print('Training Epoch %d ...' % epoch)
-                for t_batch in range(math.ceil(data_file[2]/batch_size)):
+                for t_batch in range(math.ceil(data_file[2] / batch_size)):
                     print('')
                     print('training epoch %d and batch %d' % (epoch, t_batch))
 
                     if modelType == 'DeepRL':
                         from collections import Counter
-                        dist = Counter(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval())
-                        distribution.append({str(k): v/ sum(dist.values()) for k, v in dist.items()})
+
+                        dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
+                        distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
                         model.set_distribution(distribution)
                         train_func(t_batch)
-
 
                     if modelType == 'SAE':
                         [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
                         print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-                        #print(probs)
+                        # print(probs)
                         #for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
                         #    logging.info(list(x))
                         #    logging.info(list(out))
@@ -136,33 +135,60 @@ def run():
                     train_y_labels = get_train_y_func(t_batch)
 
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
-                    print('Actual y data for train batch: ',format_array_to_print(data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].eval(),5)
-                                  ,' ', data_file[1][t_batch * batch_size : (t_batch + 1) * batch_size].shape)
-                    print('Data sent to DLModels train: ',format_array_to_print(train_y_labels,5),' ', train_y_labels.shape)
-                    print('Predicted data train: ', format_array_to_print(act_vs_pred[1],5), ' ', act_vs_pred[1].shape)
+                    print('Actual y data for train batch: ',
+                          format_array_to_print(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval(),
+                              5)
+                          , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
+                    print('Data sent to DLModels train: ', format_array_to_print(train_y_labels, 5), ' ',
+                          train_y_labels.shape)
+                    print('Predicted data train: ', format_array_to_print(act_vs_pred[1], 5), ' ', act_vs_pred[1].shape)
 
-                    if t_batch%50==0:
+                    if t_batch % 50 == 0:
                         v_errors = []
-                        for v_batch in range(math.ceil(valid_file[2]/batch_size)):
+                        for v_batch in range(math.ceil(valid_file[2] / batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
 
-                            #print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
+                            # print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
                             #      ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
                             #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
                             #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
                             v_errors.append(validate_results)
 
-                        for i,v_err in enumerate(v_errors):
-                            print(i,": ",v_err,end=', ')
+                        for i, v_err in enumerate(v_errors):
+                            print(i, ": ", v_err, end=', ')
                             print()
 
                         print(np.mean(v_errors))
 
         except StopIteration:
             pass
-
     print('done ...')
+
+
+def run():
+
+    logging.basicConfig(filename="debug.log", level=logging.DEBUG)
+    learning_rate = 0.1
+    batch_size = 100
+    epochs = 500
+    theano.config.floatX = 'float32'
+    modelType = 'DeepRL'
+    out_size = 10
+    in_size = 784
+    model = make_model(modelType,in_size, [750,500,250], out_size, batch_size)
+    input_layer_size = model.layers[0].initial_size[0]
+
+    print('loading data ...')
+    _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+
+    row_count = 1000
+    col_count = in_size + 1
+    row_idx = 0
+    for i in range(100):
+        row_idx = i * row_count
+        data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
+        train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
 
 if __name__ == '__main__':
     run()

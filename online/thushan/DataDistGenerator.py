@@ -32,8 +32,8 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'Data' + os.sep + 'mnist.pkl'
-    elements = 10000
-    granularity = 250
+    elements = 5000
+    granularity = 1000
     effect = 'noise'
 
     np.random.seed(seed)
@@ -66,10 +66,9 @@ def main():
     f_prior = f_prior ** math.ceil(math.sqrt(len(data)))
     f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
 
-    byteList = []
-    exampleList = []
-    labelList = []
+    col_count =785
     for i, dist in enumerate(f_prior):
+        exampleList = []
         for label in distribute_as(dist, granularity):
             example = random.choice(data[label])
             if effect == 'noise':
@@ -77,29 +76,40 @@ def main():
 
             example = np.minimum(1, example).astype('float32')
             exampleList.append(np.append(example,float(label)))
-            labelList.append(label)
-            #dtype S4 means a 4x8=(32-bit) byte string
-            #when using numpy arrays, only deal with np.datatype classes
-            byteArrForExample = np.append(example.astype('S4'),struct.pack('@f', float(label)))
-            byteList.append(byteArrForExample)
 
+        print('done dist in prior',i, ' out of ', len(f_prior))
         #f.write(bytes(np.asarray(byteList,dtype='S4').reshape(-1,1)))
+        fp = np.memmap(filename='mnist2.pkl', dtype='float32', mode='w+',
+                       offset=np.dtype('float32').itemsize*len(exampleList)*col_count*i,
+                       shape=(len(exampleList),col_count))
+        fp[:] = exampleList[:]
+        fp.flush()
+        del fp
 
-    np.asarray(exampleList,dtype=np.float32).tofile('test.bin')
+
     print('finished writing data ...')
+
 def retrive_data():
 
     print('retrieving data ...')
-    filename = 'test.bin'
+    filename = 'mnist_non_station.pkl'
 
+    row_count = 100
     #with open('test.bin', 'br') as f:
-    data = np.fromfile(filename,dtype=np.float32).reshape(10000,785)
-    #test2 = [i for i in range(data.shape[0]) if i%785==784]
-    arr = data[:,-1]
-    logging.info(list(arr))
+    fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*785*10,shape=(row_count,785))
+    data_new = np.empty((row_count,785),dtype=np.float32)
+    data_new[:] = fp[:]
+    arr = data_new[:,-1]
+
+    #data = np.load(filename).reshape(1000,785)
+    #idx = np.where(data == data_new[0,0])
+    #arr = data[:,-1]
+    #logging.info(list(arr))
     #data2 = data[arr]
     print('')
+
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)
     #main()
     retrive_data()
+    print('done...')
