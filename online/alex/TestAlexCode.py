@@ -52,7 +52,8 @@ class DiscreteRL(object):
 
         # number of samples
         n = math.ceil(elements / gran)
-        Xtest = np.linspace(0, 10, n).reshape(-1, 1)
+        XtestOld = np.linspace(0, 10, n)
+        Xtest = XtestOld.reshape(-1, 1)
         L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
 
         # massage the data to get a good distribution

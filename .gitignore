@@ -6,6 +6,7 @@
 *.tar.gz
 *.tar
 *.pkl
+*.bin
 .ipython/
 .idea/
 Data/
