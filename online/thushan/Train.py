@@ -41,7 +41,7 @@ def load_from_memmap(filename, row_count, col_count, start_row):
     fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*start_row,shape=(row_count,col_count))
     data = np.empty((row_count,col_count),dtype=np.float32)
     data[:] = fp[:]
-
+    test_labels = data[:,-1]
     train = make_shared(data[:,:-1],data[:,-1],'train',True, 1.0)
 
     return train
@@ -65,7 +65,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
 
     corruption_level = 0.2
     lam = 0.2
-    iterations = 1
+    iterations = 10
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -92,7 +92,7 @@ def format_array_to_print(arr, num_ele=5):
     return s
 
 
-def train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file):
+def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file):
     distribution = []
 
     for arc in range(model.arcs):
@@ -105,6 +105,7 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
         train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
 
         validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
+        test_func = results_func(arc, test_file[0], test_file[1], batch_size)
 
         print('training data ...')
         try:
@@ -125,12 +126,7 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
                     if modelType == 'SAE':
                         [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
                         print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-                        # print(probs)
-                        #for x,out,cost,y_as_vec in zip(probs[0],probs[1],probs[2],y_vec):
-                        #    logging.info(list(x))
-                        #    logging.info(list(out))
-                        #    logging.info(list(y_as_vec))
-                        #    logging.info(cost)
+
 
                     train_y_labels = get_train_y_func(t_batch)
 
@@ -142,6 +138,7 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
 
                     if t_batch % 50 == 0:
                         v_errors = []
+                        test_errors = []
                         for v_batch in range(math.ceil(valid_file[2] / batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
@@ -152,16 +149,24 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
                             #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
                             v_errors.append(validate_results)
 
-                        for i, v_err in enumerate(v_errors):
-                            print(i, ": ", v_err, end=', ')
-                            print()
+                        for test_batch in range(math.ceil(test_file[2] / batch_size)):
+                            test_results = test_func(test_batch)
+                            test_errors.append(test_results)
 
-                        print(np.mean(v_errors))
+                        for i, v_err in enumerate(v_errors):
+                            print('batch ',i, ": ", v_err, end=', ')
+                        print()
+                        print('Mean Validation Error: ', np.mean(v_errors))
+                        for i, t_err in enumerate(test_errors):
+                            print('batch ',i, ": ", t_err, end=', ')
+                        print()
+                        print('Mean Test Error: ', np.mean(test_errors))
+
 
         except StopIteration:
             pass
     print('done ...')
-    return v_err
+    return v_errors,test_errors
 
 def get_logger(name, folder_path):
     ''' Create a logger that outputs to `folder_path` '''
@@ -189,7 +194,7 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    learnMode = 'offline'
+    learnMode = 'online'
     learning_rate = 0.1
     batch_size = 500
     epochs = 100
@@ -217,7 +222,7 @@ def run():
         for i in range(50):
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err = train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
+            v_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
             validation_errors.append(v_err)
 
             valid_logger.info(v_err)
@@ -225,8 +230,8 @@ def run():
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         validation_errors = []
-        v_err = train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
-        validation_errors.append(v_err)
+        v_errors,test_errors = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)
+        #validation_errors.append(v_err)
 
 if __name__ == '__main__':
     run()

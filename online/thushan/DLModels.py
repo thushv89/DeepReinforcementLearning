@@ -112,14 +112,10 @@ class DeepAutoencoder(Transformer):
         self._corr_level = corruption_level
         self.lam = lam
 
-
         self.theta = None
         self.cost = None
         # Need to find out what cost_vector is used for...
         self.cost_vector = None
-        self.weight_sqr_sum = None
-
-        self.test_x = None
 
     def process(self, x, y):
         self._x = x
@@ -144,15 +140,12 @@ class DeepAutoencoder(Transformer):
             W, b_prime = layer.W, layer.b_prime
             x = T.nnet.sigmoid(T.dot(x,W.T) + b_prime)
 
-        self.test_x = x
-
         # costs
         # cost vector seems to hold the reconstruction error for each training case.
         # this is required for getting inputs with reconstruction error higher than average
         sum_of_weights = theano.clone(self.layers[0].W**2)
         for i,layer in enumerate(self.layers[:-1]):
             sum_of_weights = T.dot(sum_of_weights**2, self.layers[i+1].W**2)
-        self.weight_sqr_sum = sum_of_weights
 
         # weight regularizer should NOT go here. Because cost_vector is a (batch_size x 1) vector
         # where each element is cost for each element in the batch
@@ -160,8 +153,9 @@ class DeepAutoencoder(Transformer):
 
 
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
-        self.cost = T.mean(self.cost_vector) + (self.lam*0.1)*T.sum(T.sum(sum_of_weights,axis=1))
+        self.cost = T.mean(self.cost_vector) + (self.lam*0.01)*T.sum(T.sum(sum_of_weights,axis=1))
 
+        self.test_grad = None
         return None
 
     def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
@@ -180,13 +174,13 @@ class DeepAutoencoder(Transformer):
             (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate * T.grad(transformed_cost,nnlayer.b)[nnlayer.idx])),
             (nnlayer.b_prime, - learning_rate * T.grad(transformed_cost, nnlayer.b_prime))
         ]
-
+        self.test_grad = T.grad(transformed_cost, nnlayer.W)
         idx = T.iscalar('idx')
         givens = {self._x: x[idx * batch_size:(idx+1) * batch_size]}
 
         # using on_unused_inputs warn because, selected neurons could be "not depending on all the weights"
         # all the weights are a part of the cost. So it give an error otherwise
-        return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens, on_unused_input='warn')
+        return theano.function([idx,nnlayer.idx], self.test_grad, updates=updates, givens=givens, on_unused_input='warn')
 
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
         return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)

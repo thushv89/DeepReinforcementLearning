@@ -32,7 +32,7 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'Data' + os.sep + 'mnist.pkl'
-    elements = 500000
+    elements = 1000
     granularity = 1000 # number of samples per distribution
     effect = 'noise'
 
@@ -96,9 +96,10 @@ def retrive_data():
 
     row_count = 100
     #with open('test.bin', 'br') as f:
-    fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*785*10,shape=(row_count,785))
+    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=0,shape=(row_count,785))
+    d = newfp.flags
     data_new = np.empty((row_count,785),dtype=np.float32)
-    data_new[:] = fp[:]
+    data_new[:] = newfp[:]
     arr = data_new[:,-1]
 
     #data = np.load(filename).reshape(1000,785)
@@ -106,10 +107,10 @@ def retrive_data():
     #arr = data[:,-1]
     #logging.info(list(arr))
     #data2 = data[arr]
-    print('')
+    print(arr)
 
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)
     main()
-    #retrive_data()
+    retrive_data()
     print('done...')

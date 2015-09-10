@@ -415,7 +415,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[0].b_prime.set_value(layer_bias_prime)
 
             #if empty_slots:
-                ## train this layer
+                # train this layer
                 #for _ in range(self.iterations):
                     #for i in pool_indexes:
                         #layer_greedy[0](i, empty_slots)
