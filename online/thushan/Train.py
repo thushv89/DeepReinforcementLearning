@@ -222,7 +222,7 @@ def run():
         for i in range(50):
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
+            v_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)
             validation_errors.append(v_err)
 
             valid_logger.info(v_err)

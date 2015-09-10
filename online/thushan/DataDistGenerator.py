@@ -32,7 +32,7 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'Data' + os.sep + 'mnist.pkl'
-    elements = 1000
+    elements = 500000
     granularity = 1000 # number of samples per distribution
     effect = 'noise'
 
@@ -67,6 +67,8 @@ def main():
     f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
 
     col_count =785
+
+    fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
@@ -79,12 +81,12 @@ def main():
 
         print('done dist in prior',i, ' out of ', len(f_prior))
         #f.write(bytes(np.asarray(byteList,dtype='S4').reshape(-1,1)))
-        fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+',
-                       offset=np.dtype('float32').itemsize*len(exampleList)*col_count*i,
-                       shape=(len(exampleList),col_count))
-        fp[:] = exampleList[:]
-        fp.flush()
-        del fp
+        #fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+',
+         #              offset=np.dtype('float32').itemsize*len(exampleList)*col_count*i,
+          #             shape=(len(exampleList),col_count))
+        fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
+
+    del fp # includes flushing
 
 
     print('finished writing data ...')
