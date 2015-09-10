@@ -139,9 +139,6 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
                           format_array_to_print(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval(),
                               5)
                           , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
-                    print('Data sent to DLModels train: ', format_array_to_print(train_y_labels, 5), ' ',
-                          train_y_labels.shape)
-                    print('Predicted data train: ', format_array_to_print(act_vs_pred[1], 5), ' ', act_vs_pred[1].shape)
 
                     if t_batch % 50 == 0:
                         v_errors = []
@@ -164,31 +161,69 @@ def train_and_validate(batch_size, data_file, epochs, learning_rate, model, mode
         except StopIteration:
             pass
     print('done ...')
+    return v_err
 
+def get_logger(name, folder_path):
+    ''' Create a logger that outputs to `folder_path` '''
+
+    format_string = '[%(asctime)s][%(name)s][%(levelname)s] %(message)s'
+
+    # create the logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    console.formatter = logging.Formatter(format_string)
+    logger.addHandler(console)
+
+    # log to file as well
+    hardcopy = logging.FileHandler(os.path.join(folder_path, name + '.log'), mode='w')
+    hardcopy.setLevel(logging.DEBUG)
+    hardcopy.formatter = logging.Formatter(format_string)
+    logger.addHandler(hardcopy)
+
+    return logger
 
 def run():
 
-    logging.basicConfig(filename="debug.log", level=logging.DEBUG)
+    logger = get_logger('debug.log')
+
+    learnMode = 'offline'
     learning_rate = 0.1
-    batch_size = 100
-    epochs = 500
+    batch_size = 250
+    epochs = 100
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
+    valid_logger = get_logger('validation_'+modelType+'.log')
     out_size = 10
     in_size = 784
     model = make_model(modelType,in_size, [750,500,250], out_size, batch_size)
     input_layer_size = model.layers[0].initial_size[0]
 
     print('loading data ...')
-    _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-    row_count = 1000
-    col_count = in_size + 1
-    row_idx = 0
-    for i in range(100):
-        row_idx = i * row_count
-        data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-        train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
+    if learnMode == 'online':
+        _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+
+        row_count = 10000
+        col_count = in_size + 1
+        row_idx = 0
+        validation_errors = []
+        test_errors  = []
+        for i in range(50):
+            row_idx = i * row_count
+            data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
+            v_err = train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
+            validation_errors.append(v_err)
+
+            valid_logger.info(v_err)
+
+    else:
+        data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        validation_errors = []
+        v_err = train_and_validate(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file)
+        validation_errors.append(v_err)
 
 if __name__ == '__main__':
     run()

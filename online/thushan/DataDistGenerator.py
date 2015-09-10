@@ -32,8 +32,8 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'Data' + os.sep + 'mnist.pkl'
-    elements = 5000
-    granularity = 1000
+    elements = 500000
+    granularity = 1000 # number of samples per distribution
     effect = 'noise'
 
     np.random.seed(seed)
@@ -79,7 +79,7 @@ def main():
 
         print('done dist in prior',i, ' out of ', len(f_prior))
         #f.write(bytes(np.asarray(byteList,dtype='S4').reshape(-1,1)))
-        fp = np.memmap(filename='mnist2.pkl', dtype='float32', mode='w+',
+        fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+',
                        offset=np.dtype('float32').itemsize*len(exampleList)*col_count*i,
                        shape=(len(exampleList),col_count))
         fp[:] = exampleList[:]
@@ -110,6 +110,6 @@ def retrive_data():
 
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)
-    #main()
-    retrive_data()
+    main()
+    #retrive_data()
     print('done...')
