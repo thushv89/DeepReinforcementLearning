@@ -187,19 +187,22 @@ def get_logger(name, folder_path):
 
 def run():
 
-    logger = get_logger('debug.log')
+    logger = get_logger('debug','logs')
 
     learnMode = 'offline'
     learning_rate = 0.1
-    batch_size = 250
+    batch_size = 500
     epochs = 100
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
-    valid_logger = get_logger('validation_'+modelType+'.log')
+    valid_logger = get_logger('validation_'+modelType,'logs')
     out_size = 10
     in_size = 784
     model = make_model(modelType,in_size, [750,500,250], out_size, batch_size)
     input_layer_size = model.layers[0].initial_size[0]
+
+    print('---------- Model Information -------------')
+    print('Learning Mode: ',learnMode)
 
     print('loading data ...')
 

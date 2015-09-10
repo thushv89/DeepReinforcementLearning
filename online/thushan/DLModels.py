@@ -106,15 +106,20 @@ class Transformer(object):
 
 class DeepAutoencoder(Transformer):
     ''' General Deep Autoencoder '''
-    def __init__(self,layers, corruption_level, rng):
+    def __init__(self,layers, corruption_level, rng, lam=0.1):
         super().__init__(layers, 1, False)
         self._rng = rng
         self._corr_level = corruption_level
+        self.lam = lam
+
 
         self.theta = None
         self.cost = None
         # Need to find out what cost_vector is used for...
         self.cost_vector = None
+        self.weight_sqr_sum = None
+
+        self.test_x = None
 
     def process(self, x, y):
         self._x = x
@@ -139,12 +144,23 @@ class DeepAutoencoder(Transformer):
             W, b_prime = layer.W, layer.b_prime
             x = T.nnet.sigmoid(T.dot(x,W.T) + b_prime)
 
+        self.test_x = x
+
         # costs
         # cost vector seems to hold the reconstruction error for each training case.
         # this is required for getting inputs with reconstruction error higher than average
+        sum_of_weights = theano.clone(self.layers[0].W**2)
+        for i,layer in enumerate(self.layers[:-1]):
+            sum_of_weights = T.dot(sum_of_weights**2, self.layers[i+1].W**2)
+        self.weight_sqr_sum = sum_of_weights
+
+        # weight regularizer should NOT go here. Because cost_vector is a (batch_size x 1) vector
+        # where each element is cost for each element in the batch
         self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
+
+
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
-        self.cost = T.mean(self.cost_vector)
+        self.cost = T.mean(self.cost_vector) + (self.lam*0.1)*T.sum(T.sum(sum_of_weights,axis=1))
 
         return None
 
@@ -158,7 +174,7 @@ class DeepAutoencoder(Transformer):
         # clone is used to substitute a computational subgraph
         transformed_cost = theano.clone(self.cost, replace={self._x : transformed_x(self._x)})
 
-        # find out what happens in this updates list
+        # update only a set of neurons specified by index
         updates = [
             (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(transformed_cost, nnlayer.W)[:,nnlayer.idx].T)),
             (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate * T.grad(transformed_cost,nnlayer.b)[nnlayer.idx])),
@@ -167,7 +183,10 @@ class DeepAutoencoder(Transformer):
 
         idx = T.iscalar('idx')
         givens = {self._x: x[idx * batch_size:(idx+1) * batch_size]}
-        return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens)
+
+        # using on_unused_inputs warn because, selected neurons could be "not depending on all the weights"
+        # all the weights are a part of the cost. So it give an error otherwise
+        return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens, on_unused_input='warn')
 
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
         return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)
@@ -346,8 +365,8 @@ class StackedAutoencoderWithSoftmax(Transformer):
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._layered_autoencoders = [DeepAutoencoder([self.layers[i]], corruption_level, rng)
                                        for i, layer in enumerate(self.layers[:-1])] #[:-1] gets all items except last
-        self._softmax = Softmax(layers,iterations)
-        self._combined_objective = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        #self._softmax = Softmax(layers,iterations)
+        self._softmax = CombinedObjective(layers, corruption_level, rng, lam, iterations)
         self.lam = lam
         self.iterations = iterations
         self.rng = np.random.RandomState(0)
@@ -457,15 +476,10 @@ class MergeIncrementingAutoencoder(Transformer):
             if i == 0:
                 # removed ".T" in the T.grad operation. It seems having .T actually
                 # causes a dimension mismatch
-                print("mi_updates (debug): ", nnlayer.W.shape)
                 mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
                 mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
                                 - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
-                '''print('----------------------------------------')
-                theano.printing.debugprint(T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
-                                - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T))
-                print('---------------------------------------')'''
             else:
                 mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
                 mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
