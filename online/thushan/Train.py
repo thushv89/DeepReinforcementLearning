@@ -13,7 +13,7 @@ import math
 import logging
 import numpy as np
 
-def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
+def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
     '''' Load data into shared variables '''
     if not normalize:
         x_shared = theano.shared(batch_x, name + '_x_pkl')
@@ -25,14 +25,22 @@ def make_shared(batch_x, batch_y, name, normalize, normalize_thresh):
 
     return x_shared, y_shared, size
 
+def create_image_from_vector(vec,filename):
+    from PIL import Image
+    new_vec = vec*255.
+    img = Image.fromarray(np.reshape(vec,(28,28),order='C').astype(int),'L')
+    img.save(filename +'.png')
+
 def load_from_pickle(filename):
 
     with open(filename, 'rb') as handle:
         train, valid, test = pickle.load(handle, encoding='latin1')
 
-        train = make_shared(train[0], train[1], 'train', True, 1.0)
-        valid = make_shared(valid[0], valid[1], 'valid', True, 1.0)
-        test  = make_shared(test[0], test[1], 'test', True, 1.0)
+        create_image_from_vector(train[0][2,:],'test222')
+
+        train = make_shared(train[0], train[1], 'train', False, 1.0)
+        valid = make_shared(valid[0], valid[1], 'valid', False, 1.0)
+        test  = make_shared(test[0], test[1], 'test', False, 1.0)
 
         return train, valid, test
 
@@ -42,10 +50,10 @@ def load_from_memmap(filename, row_count, col_count, start_row):
     data = np.empty((row_count,col_count),dtype=np.float32)
     data[:] = fp[:]
     test_labels = data[:,-1]
-    train = make_shared(data[:,:-1],data[:,-1],'train',True, 1.0)
+    create_image_from_vector(data[2,:-1],'test22')
+    train = make_shared(data[:,:-1],data[:,-1],'train',False, 1.0)
 
     return train
-
 
 def make_layers(in_size, hid_sizes, out_size, zero_last = False):
     layers = []
@@ -65,7 +73,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
 
     corruption_level = 0.2
     lam = 0.2
-    iterations = 3
+    iterations = 15
     pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
@@ -126,9 +134,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                     if modelType == 'SAE':
                         [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
                         print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-
-
-                    train_y_labels = get_train_y_func(t_batch)
+                        print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
 
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
                     print('Actual y data for train batch: ',
@@ -136,17 +142,17 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                               5)
                           , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
 
-                    if t_batch % 50 == 0:
+                    if t_batch % 20 == 0:
                         v_errors = []
                         test_errors = []
                         for v_batch in range(math.ceil(valid_file[2] / batch_size)):
                             validate_results = validate_func(v_batch)
                             act_pred_results = get_act_vs_pred_func(v_batch)
 
-                            # print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
-                            #      ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
+                            print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
+                                  ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
                             #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
-                            #print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
+                            print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
                             v_errors.append(validate_results)
 
                         for test_batch in range(math.ceil(test_file[2] / batch_size)):
@@ -194,10 +200,10 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    learnMode = 'online'
+    learnMode = 'offline'
     learning_rate = 0.1
-    batch_size = 250
-    epochs = 100
+    batch_size = 1000
+    epochs = 1
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
     valid_logger = get_logger('validation_'+modelType,'logs')
@@ -222,6 +228,7 @@ def run():
         test_errors  = []
 
         for i in range(50):
+            print('------------------------ New Distribution(', i, ') --------------------------\n')
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
             v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)

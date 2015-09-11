@@ -31,9 +31,9 @@ def main():
     # seed determines the starting position in that sequence for the random numbers
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
-    pickle_file = 'Data' + os.sep + 'mnist.pkl'
-    elements = 500000
-    granularity = 1000 # number of samples per distribution
+    pickle_file = 'data' + os.sep + 'mnist.pkl'
+    elements = 500
+    granularity = 100 # number of samples per distribution
     effect = 'noise'
 
     np.random.seed(seed)
@@ -44,7 +44,7 @@ def main():
 
     data = defaultdict(list)
     train_x, train_y = train
-
+    create_image_from_vector(train_x[1,:],'test2')
     # sort the data into bins depending on labels
     for i in range(train_x.shape[0]):
         data[train_y[i]].append(train_x[i])
@@ -68,25 +68,25 @@ def main():
 
     col_count =785
 
-    fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
+    #fp = np.memmap(filename='data'+os.sep+'mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
             example = random.choice(data[label])
-            if effect == 'noise':
-                example = example + np.random.random_sample((example.shape[0],))
-
+            example_before = example.copy()
+            #if effect == 'noise':
+                #example = example + np.random.random_sample((example.shape[0],))
             example = np.minimum(1, example).astype('float32')
             exampleList.append(np.append(example,float(label)))
 
+        logging.info(list(example_before))
+        create_image_from_vector(example_before,'before_'+str(i))
+        logging.info(list(example))
+        create_image_from_vector(example,'after_'+str(i))
         print('done dist in prior',i, ' out of ', len(f_prior))
-        #f.write(bytes(np.asarray(byteList,dtype='S4').reshape(-1,1)))
-        #fp = np.memmap(filename='mnist_non_station.pkl', dtype='float32', mode='w+',
-         #              offset=np.dtype('float32').itemsize*len(exampleList)*col_count*i,
-          #             shape=(len(exampleList),col_count))
-        fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
+        #fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
 
-    del fp # includes flushing
+    #del fp # includes flushing
 
 
     print('finished writing data ...')
@@ -94,12 +94,11 @@ def main():
 def retrive_data():
 
     print('retrieving data ...')
-    filename = 'mnist_non_station.pkl'
+    filename = 'data'+os.sep+'mnist_non_station.pkl'
 
-    row_count = 100
+    row_count = 1000
     #with open('test.bin', 'br') as f:
-    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=0,shape=(row_count,785))
-    d = newfp.flags
+    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*785*81000,shape=(row_count,785))
     data_new = np.empty((row_count,785),dtype=np.float32)
     data_new[:] = newfp[:]
     arr = data_new[:,-1]
@@ -107,9 +106,17 @@ def retrive_data():
     #data = np.load(filename).reshape(1000,785)
     #idx = np.where(data == data_new[0,0])
     #arr = data[:,-1]
-    #logging.info(list(arr))
-    #data2 = data[arr]
-    print(arr)
+    granularity = 1000
+    for i in range(int(row_count/granularity)):
+        logging.info(list(arr[i*granularity:(i+1)*granularity]))
+
+    create_image_from_vector(data_new[1,:-1],'test')
+
+def create_image_from_vector(vec,filename):
+    from PIL import Image
+    new_vec = vec*255.
+    img = Image.fromarray(np.reshape(vec*255.,(28,28)).astype(int),'L')
+    img.save(filename +'.png')
 
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)

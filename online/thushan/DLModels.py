@@ -106,7 +106,7 @@ class Transformer(object):
 
 class DeepAutoencoder(Transformer):
     ''' General Deep Autoencoder '''
-    def __init__(self,layers, corruption_level, rng, lam=0.1):
+    def __init__(self,layers, corruption_level, rng, lam=0.001):
         super().__init__(layers, 1, False)
         self._rng = rng
         self._corr_level = corruption_level
@@ -114,8 +114,10 @@ class DeepAutoencoder(Transformer):
 
         self.theta = None
         self.cost = None
+        self.cost_before_reg = None
         # Need to find out what cost_vector is used for...
         self.cost_vector = None
+        self.weight_regularizer = None
 
     def process(self, x, y):
         self._x = x
@@ -140,27 +142,30 @@ class DeepAutoencoder(Transformer):
             W, b_prime = layer.W, layer.b_prime
             x = T.nnet.sigmoid(T.dot(x,W.T) + b_prime)
 
+
+        self.weight_regularizer = T.sum(T.sum(self.layers[0].W**2, axis=1))
+        #weight_reg_coeff = (0.5**2) * self.layers[0].W.shape[0]*self.layers[0].W.shape[1]
+        for i,layer in enumerate(self.layers[1:]):
+            #self.weight_regularizer = T.dot(self.weight_regularizer**2, self.layers[i+1].W**2)
+            self.weight_regularizer += T.sum(T.sum(layer.W**2, axis=1))
+            #weight_reg_coeff += (0.1**2) * layer.W.shape[0]*layer.W.shape[1]
+
+        # NOTE: weight regularizer should NOT go here. Because cost_vector is a (batch_size x 1) vector
+        # where each element is cost for each element in the batch
         # costs
         # cost vector seems to hold the reconstruction error for each training case.
         # this is required for getting inputs with reconstruction error higher than average
-        sum_of_weights = theano.clone(self.layers[0].W**2)
-        for i,layer in enumerate(self.layers[:-1]):
-            sum_of_weights = T.dot(sum_of_weights**2, self.layers[i+1].W**2)
-
-        # weight regularizer should NOT go here. Because cost_vector is a (batch_size x 1) vector
-        # where each element is cost for each element in the batch
         self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
 
-
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
-        self.cost = T.mean(self.cost_vector) + (self.lam*0.01)*T.sum(T.sum(sum_of_weights,axis=1))
+        self.cost_before_reg = T.mean(self.cost_vector)
+        self.cost = T.mean(self.cost_vector) + (self.lam * self.weight_regularizer)
 
-        self.test_grad = None
         return None
 
     def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=updates, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=[self.cost,self.cost_before_reg], updates=updates, transformed_x=transformed_x)
 
     def indexed_train_func(self, arc, learning_rate, x, batch_size, transformed_x):
 
@@ -174,16 +179,16 @@ class DeepAutoencoder(Transformer):
             (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate * T.grad(transformed_cost,nnlayer.b)[nnlayer.idx])),
             (nnlayer.b_prime, - learning_rate * T.grad(transformed_cost, nnlayer.b_prime))
         ]
-        self.test_grad = T.grad(transformed_cost, nnlayer.W)
+
         idx = T.iscalar('idx')
         givens = {self._x: x[idx * batch_size:(idx+1) * batch_size]}
 
         # using on_unused_inputs warn because, selected neurons could be "not depending on all the weights"
         # all the weights are a part of the cost. So it give an error otherwise
-        return theano.function([idx,nnlayer.idx], self.test_grad, updates=updates, givens=givens, on_unused_input='warn')
+        return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens, on_unused_input='warn')
 
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=[self.cost,self.cost_before_reg], updates=None, transformed_x=transformed_x)
 
     def get_hard_examples(self, _, x, y, batch_size, transformed_x=identity):
         '''
@@ -285,6 +290,9 @@ class Softmax(Transformer):
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self.make_func(x,y,batch_size,[self._y,self.results],None, transformed_x)
+
+    def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
 
 class Pool(object):
 
@@ -492,7 +500,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
+        mi_train = theano.function([idx, self.layers[0].idx], T.grad(mi_cost, self._autoencoder.layers[0].W), updates=mi_updates, givens=given)
 
         # the merge is done only for the first hidden layer.
         # apperantly this has been tested against doing this for all layers.
@@ -620,8 +628,7 @@ class MergeIncrementingAutoencoder(Transformer):
                 for _ in range(int(self.iterations)):
                     for i in pool_indexes:
                         #theano.printing.debugprint(mi_train)
-                        mi_train(i, empty_slots)
-
+                        test_results = mi_train(i, empty_slots)
             else:
                 for i in pool_indexes:
                     combined_objective_tune(i)
@@ -685,7 +692,7 @@ class DeepReinforcementLearningModel(Transformer):
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
-        #self._sae = StackedAutoencoder(layers, corruption_level, rng)
+        #self._softmax = Softmax(layers,iterations=iterations)
         self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam=lam, iterations=iterations)
 
         # _pool : has all the data points
@@ -774,7 +781,11 @@ class DeepReinforcementLearningModel(Transformer):
         def train_adaptively(batch_id):
 
             self._error_log.append(np.asscalar(error_func(batch_id)))
-            self._reconstruction_log.append(np.asscalar(reconstruction_func(batch_id)))
+            test_rec_results = reconstruction_func(batch_id)
+            test_rec_err = np.asscalar(test_rec_results[0])
+            test_rec_before_reg = test_rec_results[1]
+            print('Reconstruction Error (with reg): ',test_rec_err, ' (w/o reg: ', test_rec_before_reg, ') batch id: ', batch_id)
+            self._reconstruction_log.append(test_rec_err)
             self._neuron_balance_log.append(neuron_balance)
 
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
