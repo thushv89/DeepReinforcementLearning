@@ -200,9 +200,9 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    learnMode = 'offline'
+    learnMode = 'online'
     learning_rate = 0.1
-    batch_size = 1000
+    batch_size = 100
     epochs = 1
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
@@ -228,7 +228,7 @@ def run():
         test_errors  = []
 
         for i in range(50):
-            print('------------------------ New Distribution(', i, ') --------------------------\n')
+            print('------------------------ New Distribution(', i,') --------------------------\n')
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
             v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)

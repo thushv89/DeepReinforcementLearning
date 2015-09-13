@@ -32,9 +32,9 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'data' + os.sep + 'mnist.pkl'
-    elements = 500
+    elements = 500000
     granularity = 100 # number of samples per distribution
-    effect = 'noise'
+    effect = ''
 
     np.random.seed(seed)
     random.seed(seed)
@@ -68,25 +68,25 @@ def main():
 
     col_count =785
 
-    #fp = np.memmap(filename='data'+os.sep+'mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
+    fp = np.memmap(filename='data'+os.sep+'mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
             example = random.choice(data[label])
             example_before = example.copy()
-            #if effect == 'noise':
-                #example = example + np.random.random_sample((example.shape[0],))
+            if effect == 'noise':
+                example = example + np.random.random_sample((example.shape[0],))
             example = np.minimum(1, example).astype('float32')
             exampleList.append(np.append(example,float(label)))
 
         logging.info(list(example_before))
-        create_image_from_vector(example_before,'before_'+str(i))
+        #create_image_from_vector(example_before,'before_'+str(i))
         logging.info(list(example))
-        create_image_from_vector(example,'after_'+str(i))
+        #create_image_from_vector(example,'after_'+str(i))
         print('done dist in prior',i, ' out of ', len(f_prior))
-        #fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
+        fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
 
-    #del fp # includes flushing
+    del fp # includes flushing
 
 
     print('finished writing data ...')
@@ -113,13 +113,15 @@ def retrive_data():
     create_image_from_vector(data_new[1,:-1],'test')
 
 def create_image_from_vector(vec,filename):
-    from PIL import Image
+    from pylab import imshow,show,cm
     new_vec = vec*255.
-    img = Image.fromarray(np.reshape(vec*255.,(28,28)).astype(int),'L')
-    img.save(filename +'.png')
+    #img = Image.fromarray(np.reshape(vec*255.,(28,28)).astype(int),'L')
+    #img.save(filename +'.png')
+    imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
+    show()
 
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)
     main()
-    retrive_data()
+    #retrive_data()
     print('done...')
