@@ -30,7 +30,6 @@ def iterations_shim(train, iterations):
 
     return func
 
-
 class Transformer(object):
 
     #__slots__ save memory by allocating memory only to the varibles defined in the list
@@ -279,8 +278,6 @@ class Softmax(Transformer):
         ''' all print statements for this method returned None when I used iterations_shim'''
         ''' because func inside iteration_shim didn't return anything at the moment '''
         return iterations_shim(train, iterations)
-
-
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self.make_func(x,y,batch_size,self.cost,None,transformed_x)
@@ -652,7 +649,7 @@ class CombinedObjective(Transformer):
         self._autoencoder.process(x,yy)
         self._softmax.process(x,yy)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations = None):
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations = None, v_x = None, v_y = None):
 
         if iterations is None:
             iterations = self.iterations
