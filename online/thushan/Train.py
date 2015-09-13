@@ -137,12 +137,12 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                         print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
 
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
-                    print('Actual y data for train batch: ',
-                          format_array_to_print(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval(),
-                              5)
-                          , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
+                    #print('Actual y data for train batch: ',
+                    #      format_array_to_print(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval(),
+                    #          5)
+                    #      , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
 
-                    if t_batch % 20 == 0:
+                    if t_batch % 50 == 0:
                         v_errors = []
                         test_errors = []
                         for v_batch in range(math.ceil(valid_file[2] / batch_size)):
@@ -228,6 +228,7 @@ def run():
         test_errors  = []
 
         for i in range(50):
+            print()
             print('------------------------ New Distribution(', i,') --------------------------\n')
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
@@ -235,8 +236,8 @@ def run():
             validation_errors.append(v_err)
             test_errors.append(test_err)
 
-            valid_logger.info(v_err)
-            test_logger.info(test_err)
+            valid_logger.info(list(v_err))
+            test_logger.info(list(test_err))
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         validation_errors = []

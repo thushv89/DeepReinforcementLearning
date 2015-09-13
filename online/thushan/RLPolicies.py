@@ -121,6 +121,7 @@ class ContinuousState(Controller):
         if action == self.Action.pool:
             funcs['pool'](1)
         elif action == self.Action.reduce:
+            # method signature: amount, to_merge, to_inc
             funcs['merge_increment_pool'](data['pool_relevant'], to_move, 0)
         elif action == self.Action.increment:
             funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)

@@ -380,7 +380,6 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         self._autoencoder.process(x,y)
         self._softmax.process(x,y)
-        #self._combined_objective.process(x,y)
 
         for ae in self._layered_autoencoders:
             ae.process(x, y)

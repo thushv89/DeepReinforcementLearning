@@ -79,10 +79,6 @@ def main():
             example = np.minimum(1, example).astype('float32')
             exampleList.append(np.append(example,float(label)))
 
-        logging.info(list(example_before))
-        #create_image_from_vector(example_before,'before_'+str(i))
-        logging.info(list(example))
-        #create_image_from_vector(example,'after_'+str(i))
         print('done dist in prior',i, ' out of ', len(f_prior))
         fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
 
@@ -96,7 +92,7 @@ def retrive_data():
     print('retrieving data ...')
     filename = 'data'+os.sep+'mnist_non_station.pkl'
 
-    row_count = 1000
+    row_count = 100000
     #with open('test.bin', 'br') as f:
     newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*785*81000,shape=(row_count,785))
     data_new = np.empty((row_count,785),dtype=np.float32)

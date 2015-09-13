@@ -18,8 +18,4 @@ Util/faces
 Util/labels
 com/dl/faces-classif/DataFaces
 Output/
-com/dl/gpu/sae_example.py
-com/dl/gpu/ae_example.py
-com/dl/gpu/mlp_example.py
-com/dl/gpu/logistic_sgd.py
-com/dl/gpu/logistic_sgd.pyc
+.matplotlib
