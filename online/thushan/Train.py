@@ -67,14 +67,10 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
-    corruption_level = 0.2
-    lam = 0.2
-    iterations = 15
-    pool_size = 10000
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
     if model_type == 'DeepRL':
@@ -100,7 +96,7 @@ def format_array_to_print(arr, num_ele=5):
     return s
 
 
-def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file):
+def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stopping):
     distribution = []
 
     for arc in range(model.arcs):
@@ -110,7 +106,11 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
 
         get_act_vs_pred_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
         results_func = model.error_func
-        train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
+
+        if early_stopping:
+            train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+        else:
+            train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, None, None)
 
         validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
@@ -132,9 +132,9 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                         train_func(t_batch)
 
                     if modelType == 'SAE':
-                        [greedy_costs, fine_cost, probs, y_vec] = train_func(t_batch)
-                        print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
-                        print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
+                        train_func(t_batch)
+                        #print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
+                        #print('Greedy costs, Fine tune cost, combined cost: ', greedy_costs, ' ', fine_cost, ' ')
 
                     act_vs_pred = get_act_vs_pred_train_func(t_batch)
                     #print('Actual y data for train batch: ',
@@ -153,11 +153,11 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                                   ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
                             #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
                             print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
-                            v_errors.append(validate_results)
+                            v_errors.append(np.asscalar(validate_results))
 
                         for test_batch in range(math.ceil(test_file[2] / batch_size)):
                             test_results = test_func(test_batch)
-                            test_errors.append(test_results)
+                            test_errors.append(np.asscalar(test_results))
 
                         for i, v_err in enumerate(v_errors):
                             print('batch ',i, ": ", v_err, end=', ')
@@ -200,23 +200,43 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    learnMode = 'online'
-    learning_rate = 0.1
+    learnMode = 'offline'
+    learning_rate = 0.25
     batch_size = 100
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'DeepRL'
-    valid_logger = get_logger('validation_'+modelType,'logs')
-    test_logger = get_logger('test_'+modelType,'logs')
+    modelType = 'SAE'
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
     out_size = 10
     in_size = 784
-    model = make_model(modelType,in_size, [750,500,500], out_size, batch_size)
+    hid_sizes = [750,500,500]
+
+    corruption_level = 0.2
+    lam = 0.2
+    iterations = 50
+    pool_size = 10000
+    early_stop = True
+
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size)
     input_layer_size = model.layers[0].initial_size[0]
 
     print('---------- Model Information -------------')
     print('Learning Mode: ',learnMode)
+    print('Model type: ', modelType)
+    print('Batch size: ', batch_size)
+    print('Epochs: ', epochs)
 
-    print('loading data ...')
+    layers_str = str(in_size) + ', '
+    for s in hid_sizes:
+        layers_str += str(s) + ', '
+    layers_str += str(out_size)
+    print('Network Configuration: ', layers_str)
+    print('Iterations: ', iterations)
+    print('Lambda Regularizing Coefficient: ', lam)
+    print('Pool Size: ', pool_size)
+
+    print('\nloading data ...')
 
     if learnMode == 'online':
         _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
@@ -228,11 +248,10 @@ def run():
         test_errors  = []
 
         for i in range(50):
-            print()
-            print('------------------------ New Distribution(', i,') --------------------------\n')
+            print('\n------------------------ New Distribution(', i,') --------------------------\n')
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)
+            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 
@@ -240,9 +259,9 @@ def run():
             test_logger.info(list(test_err))
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
-        validation_errors = []
-        v_errors,test_errors = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file)
-        #validation_errors.append(v_err)
+        v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
+        valid_logger.info(list(v_err))
+        test_logger.info(list(test_err))
 
 if __name__ == '__main__':
     run()
