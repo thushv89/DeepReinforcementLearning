@@ -30,17 +30,22 @@ def iterations_shim(train, iterations):
 
     return func
 
-def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequency):
+def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequency, validation_type='n_rand_for_train',n=10):
 
     def func(i):
         #we want to minimize best_valid_loss, so we shoudl start with largest
         best_valid_loss = np.inf
         patience = 0.2 * iterations # look at this many examples
         patience_increase = 1.5
-        improvement_threshold = 0.95
+        improvement_threshold = 0.99
 
-        #v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size = 5)
-        #print('random batches: ', list(v_batch_idx))
+        if validation_type == 'full':
+            v_batch_idx = np.arange(0,valid_size)
+
+        if validation_type == 'n_rand_for_train':
+            v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size=n)
+            print('random batches: ', list(v_batch_idx))
+
         for iter in range(iterations):
             print('early_stopping iteration ', str(iter))
 
@@ -53,8 +58,12 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
             # doing this every epoch
             if iter % validation_freq == 0:
                 print('validating')
+                if validation_type == 'n_rand_for_validation':
+                    v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size=n)
+                    print('random batches: ', list(v_batch_idx))
+
                 v_results = []
-                for v_i in range(int(valid_size)):
+                for v_i in v_batch_idx:
                     v_results.append(validate(int(v_i)))
                 curr_valid_loss = np.mean(v_results)
                 print('curr valid loss: ', curr_valid_loss, ' best_valid_loss: ', best_valid_loss)
@@ -771,7 +780,6 @@ class DeepReinforcementLearningModel(Transformer):
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
-        #self._softmax = Softmax(layers,iterations=iterations)
         self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam=lam, iterations=iterations)
 
         # _pool : has all the data points

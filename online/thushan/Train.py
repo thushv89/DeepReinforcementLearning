@@ -203,7 +203,7 @@ def run():
     learnMode = 'offline'
     learning_rate = 0.25
     batch_size = 100
-    epochs = 1
+    epochs = 3
     theano.config.floatX = 'float32'
     modelType = 'SAE'
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
