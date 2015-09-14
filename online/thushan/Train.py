@@ -203,7 +203,7 @@ def run():
     learnMode = 'offline'
     learning_rate = 0.25
     batch_size = 100
-    epochs = 3
+    epochs = 1
     theano.config.floatX = 'float32'
     modelType = 'SAE'
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
@@ -214,7 +214,7 @@ def run():
 
     corruption_level = 0.2
     lam = 0.2
-    iterations = 50
+    iterations = 100
     pool_size = 10000
     early_stop = True
 

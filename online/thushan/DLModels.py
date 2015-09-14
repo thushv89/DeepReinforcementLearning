@@ -35,9 +35,9 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
     def func(i):
         #we want to minimize best_valid_loss, so we shoudl start with largest
         best_valid_loss = np.inf
-        patience = 0.2 * iterations # look at this many examples
+        patience = 0.5 * iterations # look at this many examples
         patience_increase = 1.5
-        improvement_threshold = 0.99
+        improvement_threshold = 0.995
 
         if validation_type == 'full':
             v_batch_idx = np.arange(0,valid_size)
@@ -65,7 +65,7 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
                 v_results = []
                 for v_i in v_batch_idx:
                     v_results.append(validate(int(v_i)))
-                curr_valid_loss = np.mean(v_results)
+                curr_valid_loss = np.min(v_results)
                 print('curr valid loss: ', curr_valid_loss, ' best_valid_loss: ', best_valid_loss)
 
                 if curr_valid_loss < best_valid_loss:
@@ -346,7 +346,18 @@ class Softmax(Transformer):
 
         valid_size = v_y.get_value().shape[0]/batch_size
 
-        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 5)
+        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 10)
+
+    def train_with_early_stop_func_v2(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
+        if iterations is None:
+            iterations = self.iterations
+
+        updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
+
+        train = self.make_func(x,y,batch_size,self.cost,updates,transformed_x)
+        validate = self.make_func(v_x, v_y, batch_size, self.cost, None, transformed_x)
+
+        return [train, validate]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self.make_func(x,y,batch_size,self.cost,None,transformed_x)
@@ -455,20 +466,21 @@ class StackedAutoencoderWithSoftmax(Transformer):
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         if early_stopping:
-            softmax_train_func = self._softmax.train_with_early_stop_func(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
+            softmax_train_func,softmax_finetune_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
         else:
             softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
 
         def train_all(batch_id):
             greedy_costs = []
             for i in range(len(self.layers)-1):
-                greedy_costs.append(layer_greedy[i](int(batch_id)))
-            finetune_cost = finetune(batch_id)
-            error_mean = softmax_train_func(batch_id)
-            #comb_obj_cost = combined_objective_tune(batch_id)
-            return [greedy_costs, finetune_cost, error_mean]
+                layer_greedy[i](int(batch_id))
+            finetune(batch_id)
+            softmax_train_func(batch_id)
 
-        return train_all
+        def fintune(batch_id):
+            softmax_finetune_func(batch_id)
+
+        return [train_all,finetune]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)
@@ -756,7 +768,18 @@ class CombinedObjective(Transformer):
 
         valid_size = v_x.get_value().shape[0]/batch_size
 
-        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 5)
+        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 10)
+
+    def train_with_early_stop_func_v2(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
+        if iterations is None:
+            iterations = self.iterations
+
+        updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
+
+        train = self.make_func(x,y,batch_size,self.cost,updates,transformed_x)
+        validate = self.make_func(v_x, v_y, batch_size, self.cost, None, transformed_x)
+
+        return [train, validate]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y, batch_size, transformed_x)
