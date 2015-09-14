@@ -142,7 +142,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                     #          5)
                     #      , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
 
-                    if t_batch % 50 == 0:
+                    if (t_batch + 1) % 50 == 0:
                         v_errors = []
                         test_errors = []
                         for v_batch in range(math.ceil(valid_file[2] / batch_size)):

@@ -39,6 +39,8 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
         patience_increase = 1.5
         improvement_threshold = 0.95
 
+        #v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size = 5)
+        #print('random batches: ', list(v_batch_idx))
         for iter in range(iterations):
             print('early_stopping iteration ', str(iter))
 
@@ -53,7 +55,7 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
                 print('validating')
                 v_results = []
                 for v_i in range(int(valid_size)):
-                    v_results.append(validate(v_i))
+                    v_results.append(validate(int(v_i)))
                 curr_valid_loss = np.mean(v_results)
                 print('curr valid loss: ', curr_valid_loss, ' best_valid_loss: ', best_valid_loss)
 
@@ -331,7 +333,7 @@ class Softmax(Transformer):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
 
         train = self.make_func(x,y,batch_size,self.cost,updates,transformed_x)
-        validate = self.make_func(v_x, v_y, batch_size, self.cost, updates, transformed_x)
+        validate = self.make_func(v_x, v_y, batch_size, self.cost, None, transformed_x)
 
         valid_size = v_y.get_value().shape[0]/batch_size
 
@@ -741,7 +743,7 @@ class CombinedObjective(Transformer):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
 
         train = self.make_func(x,y,batch_size,combined_cost,updates,transformed_x)
-        validate = self.make_func(v_x, v_y, batch_size, combined_cost, updates, transformed_x)
+        validate = self.make_func(v_x, v_y, batch_size, combined_cost, None, transformed_x)
 
         valid_size = v_x.get_value().shape[0]/batch_size
 
