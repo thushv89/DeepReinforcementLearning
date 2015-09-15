@@ -903,6 +903,7 @@ class DeepReinforcementLearningModel(Transformer):
 
             return 1 - (last[0] / batches_covered)
 
+        # get early stopping
         def train_adaptively(batch_id):
 
             self._error_log.append(np.asscalar(error_func(batch_id)))
