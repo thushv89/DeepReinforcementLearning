@@ -95,7 +95,6 @@ def format_array_to_print(arr, num_ele=5):
 
     return s
 
-
 def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stopping):
     distribution = []
 
@@ -174,6 +173,129 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
     print('done ...')
     return v_errors,test_errors
 
+
+def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True):
+    distribution = []
+
+    for arc in range(model.arcs):
+
+        results_func = model.error_func
+
+        if modelType == 'DeepRL':
+            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+        elif modelType == 'SAE':
+            pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+
+        validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
+        test_func = results_func(arc, test_file[0], test_file[1], batch_size)
+
+        print('training data ...')
+        try:
+            if modelType == 'SAE':
+                for epoch in range(pre_epochs):
+                    print('Training Epoch %d ...' % epoch)
+                    for t_batch in range(math.ceil(data_file[2] / batch_size)):
+                        t_cost = pretrain_func(t_batch)
+                        print('training epoch %d and batch %d and cost %f' % (epoch, t_batch,t_cost))
+
+            if modelType == 'DeepRL':
+                for t_batch in range(math.ceil(data_file[2] / batch_size)):
+                    if modelType == 'DeepRL':
+                        from collections import Counter
+                        dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
+                        distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
+                        model.set_distribution(distribution)
+
+                        train_adaptive(t_batch)
+
+            if modelType == 'SAE' and early_stop:
+                #########################################################################
+                #####                         Early-Stopping                        #####
+                #########################################################################
+                n_train_batches = math.ceil(data_file[2] / batch_size)
+                patience = 10 * n_train_batches # look at this many examples
+                patience_increase = 2.
+                improvement_threshold = 0.995
+                #validation frequency - the number of minibatches to go through before checking validation set
+                validation_freq = min(n_train_batches,patience/2)
+
+                #we want to minimize best_valid_loss, so we shoudl start with largest
+                best_valid_loss = np.inf
+                test_score = 0.
+
+                done_looping = False
+
+                f_epoch = 0
+                while f_epoch < fine_epochs and (not done_looping):
+                    f_epoch += 1
+                    fine_tune_cost = []
+                    for t_batch in range(n_train_batches):
+                        cost = finetune_func(t_batch)
+                        fine_tune_cost.append(cost)
+                        #what's the role of iter? iter acts as follows
+                        #in first epoch, iter for minibatch 'x' is x
+                        #in second epoch, iter for minibatch 'x' is n_train_batches + x
+                        #iter is the number of minibatches processed so far...
+                        f_iter = (f_epoch-1) * n_train_batches + t_batch
+
+                        # this is an operation done in cycles. 1 cycle is iter+1/validation_freq
+                        # doing this every epoch
+                        if (f_iter+1) % validation_freq == 0:
+                            n_valid_batches =  math.ceil(valid_file[2] / batch_size)
+                            valid_errs = []
+                            for v_batch in range(n_valid_batches):
+                                valid_errs.append(np.asscalar(finetune_valid_func(v_batch)))
+
+                            curr_valid_loss = np.mean(valid_errs)
+
+                            if curr_valid_loss < best_valid_loss:
+
+                                if (curr_valid_loss < best_valid_loss * improvement_threshold):
+                                    patience = max(patience, f_iter * patience_increase)
+                                    print('Patience: ',patience)
+
+                                tmp_v_errs = []
+                                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                                    tmp_v_errs.append(np.asscalar(validate_func(v_batch)))
+                                print('Mean Validation Error: ', np.mean(tmp_v_errs))
+
+                                best_valid_loss = curr_valid_loss
+                            print('Iter: ', f_iter, 'Curr valid: ', curr_valid_loss, ', Best valid: ', best_valid_loss)
+
+                    #patience is here to check the maximum number of iterations it should check
+                    #before terminating
+                    if patience <= f_iter:
+                        print('Early stopping at iter: ', f_iter)
+                        done_looping = True
+                        break
+            else:
+                for f_epoch in range(fine_epochs):
+                    finetune_func(t_batch)
+
+            v_errors = []
+            test_errors = []
+            for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                validate_results = validate_func(v_batch)
+                v_errors.append(np.asscalar(validate_results))
+
+            for test_batch in range(math.ceil(test_file[2] / batch_size)):
+                test_results = test_func(test_batch)
+                test_errors.append(np.asscalar(test_results))
+
+            for i, v_err in enumerate(v_errors):
+                print('batch ',i, ": ", v_err, end=', ')
+            print()
+            print('Mean Validation Error: ', np.mean(v_errors))
+            for i, t_err in enumerate(test_errors):
+                print('batch ',i, ": ", t_err, end=', ')
+            print()
+            print('Mean Test Error: ', np.mean(test_errors))
+
+        except StopIteration:
+            pass
+    print('done ...')
+    return v_errors,test_errors
+
 def get_logger(name, folder_path):
     ''' Create a logger that outputs to `folder_path` '''
 
@@ -210,11 +332,11 @@ def run():
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
     out_size = 10
     in_size = 784
-    hid_sizes = [750,500,500]
+    hid_sizes = [500,500,500]
 
     corruption_level = 0.2
-    lam = 0.2
-    iterations = 100
+    lam = 0.1
+    iterations = 15
     pool_size = 10000
     early_stop = True
 
@@ -251,7 +373,7 @@ def run():
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             row_idx = i * row_count
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
+            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, iterations, valid_file, test_file, early_stop)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 
@@ -259,7 +381,9 @@ def run():
             test_logger.info(list(test_err))
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
-        v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
+        pre_epochs = 8
+        finetune_epochs = 40
+        v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file)
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err))
 

@@ -161,7 +161,7 @@ class Transformer(object):
 
 class DeepAutoencoder(Transformer):
     ''' General Deep Autoencoder '''
-    def __init__(self,layers, corruption_level, rng, lam=0.001):
+    def __init__(self,layers, corruption_level, rng, lam=0.0):
         super().__init__(layers, 1, False)
         self._rng = rng
         self._corr_level = corruption_level
@@ -464,23 +464,28 @@ class StackedAutoencoderWithSoftmax(Transformer):
     def train_func(self, arc, learning_rate, x, y, batch_size, early_stopping, v_x, v_y, transformed_x=identity):
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
-        finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+        ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         if early_stopping:
             softmax_train_func,softmax_finetune_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
         else:
             softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
 
-        def train_all(batch_id):
+        def pre_train(batch_id):
             greedy_costs = []
             for i in range(len(self.layers)-1):
                 layer_greedy[i](int(batch_id))
-            finetune(batch_id)
-            softmax_train_func(batch_id)
+            pre_cost,pre_cost_b4_reg = ae_finetune_func(batch_id)
+            return pre_cost
 
-        def fintune(batch_id):
-            softmax_finetune_func(batch_id)
+        def finetune(batch_id):
+            t_cost = softmax_train_func(batch_id)
+            return t_cost
 
-        return [train_all,finetune]
+        def validate(batch_id):
+            f_cost = softmax_finetune_func(batch_id)
+            return f_cost
+
+        return [pre_train,finetune,validate]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)
@@ -519,7 +524,7 @@ class MergeIncrementingAutoencoder(Transformer):
         for ae in self._layered_autoencoders:
             ae.process(x,y)
 
-    def merge_inc_func(self, learning_rate, batch_size, x, y):
+    def merge_inc_func(self, learning_rate, batch_size, x, y, v_x, v_y):
 
         m = T.matrix('m')
         # map operation applies a certain function to a sequence. This is the upper part of cosine dist eqn
@@ -543,7 +548,7 @@ class MergeIncrementingAutoencoder(Transformer):
         # fintune is done by optimizing cross-entropy between x and reconstructed_x
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         # actual fine tuning using softmax error + reconstruction error
-        combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
+        combined_objective_tune = self._combined_objective.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size)
 
         # set up cost function
         mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
@@ -579,7 +584,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], T.grad(mi_cost, self._autoencoder.layers[0].W), updates=mi_updates, givens=given)
+        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
 
         # the merge is done only for the first hidden layer.
         # apperantly this has been tested against doing this for all layers.
@@ -706,8 +711,7 @@ class MergeIncrementingAutoencoder(Transformer):
             if empty_slots:
                 for _ in range(int(self.iterations)):
                     for i in pool_indexes:
-                        #theano.printing.debugprint(mi_train)
-                        test_results = mi_train(i, empty_slots)
+                        mi_train(i, empty_slots)
             else:
                 for i in pool_indexes:
                     combined_objective_tune(i)
@@ -774,12 +778,20 @@ class CombinedObjective(Transformer):
         if iterations is None:
             iterations = self.iterations
 
-        updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
+        combined_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+        #combined_cost = self._softmax.cost + self.lam * 0.5
 
-        train = self.make_func(x,y,batch_size,self.cost,updates,transformed_x)
-        validate = self.make_func(v_x, v_y, batch_size, self.cost, None, transformed_x)
+        theta = []
+        for layer in self.layers[:-1]:
+            theta += [layer.W, layer.b, layer.b_prime]
+        theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
 
-        return [train, validate]
+        updates = [(param, param - learning_rate*grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
+
+        train = self.make_func(x,y,batch_size,combined_cost,updates,transformed_x)
+        validate = self.make_func(v_x, v_y, batch_size, combined_cost, None, transformed_x)
+
+        return [iterations_shim(train,iterations), validate]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y, batch_size, transformed_x)
@@ -821,13 +833,13 @@ class DeepReinforcementLearningModel(Transformer):
         self._merge_increment.process(x, y)
         #self._sae.process(x, y)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, early_stopping=False, v_x=None, v_y=None, apply_x=identity):
+    def train_func(self, arc, learning_rate, x, y, batch_size, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
-        if early_stopping:
-            train_func = self._softmax.train_with_early_stop_func(arc,learning_rate,x,y,v_x,v_y,batch_size,apply_x)
-        else:
-            train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
+        layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
+        ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+
+        train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
@@ -838,7 +850,6 @@ class DeepReinforcementLearningModel(Transformer):
         #sae_train_func = self._sae.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         hard_examples_func = self._autoencoder.get_hard_examples(arc, x, y, batch_size, apply_x)
-
         train_func_pool = self._softmax.train_func(arc, learning_rate, self._pool.data, self._pool.data_y, batch_size, apply_x)
         train_func_hard_pool = self._softmax.train_func(arc, learning_rate, self._hard_pool.data, self._hard_pool.data_y, batch_size, apply_x)
 
@@ -942,6 +953,7 @@ class DeepReinforcementLearningModel(Transformer):
             self._controller.move(len(self._error_log), data, funcs)
 
             train_func(batch_id)
+
 
         return train_adaptively
 
