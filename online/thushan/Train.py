@@ -74,8 +74,9 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_le
     policy = RLPolicies.ContinuousState()
     layers = make_layers(in_size, hid_sizes, out_size, False)
     if model_type == 'DeepRL':
+        finetune_epochs = 40
         model = DLModels.DeepReinforcementLearningModel(
-            layers, corruption_level, rng, iterations, lam, batch_size, pool_size, policy)
+            layers, corruption_level, rng, iterations, finetune_epochs, lam, batch_size, pool_size, pool_size/10, policy)
     elif model_type == 'SAE':
         model = DLModels.StackedAutoencoderWithSoftmax(
             layers,corruption_level,rng,lam,iterations)
@@ -175,14 +176,15 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
 
 
 def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True):
-    distribution = []
+    t_distribution = []
+    v_distribution = []
 
     for arc in range(model.arcs):
 
         results_func = model.error_func
 
         if modelType == 'DeepRL':
-            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            train_adaptive,finetune_adaptive, finetune_valid_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
         elif modelType == 'SAE':
             pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
 
@@ -197,16 +199,6 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
                         t_cost = pretrain_func(t_batch)
                         print('training epoch %d and batch %d and cost %f' % (epoch, t_batch,t_cost))
-
-            if modelType == 'DeepRL':
-                for t_batch in range(math.ceil(data_file[2] / batch_size)):
-                    if modelType == 'DeepRL':
-                        from collections import Counter
-                        dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
-                        distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
-                        model.set_distribution(distribution)
-
-                        train_adaptive(t_batch)
 
             if modelType == 'SAE' and early_stop:
                 #########################################################################
@@ -268,9 +260,70 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         print('Early stopping at iter: ', f_iter)
                         done_looping = True
                         break
-            else:
+            elif modelType=='SAE' and not early_stop:
                 for f_epoch in range(fine_epochs):
                     finetune_func(t_batch)
+
+            elif modelType == 'DeepRL' and early_stop:
+
+                from collections import Counter
+
+                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                    v_dist = Counter(valid_file[1][v_batch * batch_size: (v_batch + 1) * batch_size].eval())
+                    v_distribution.append({str(k): v / sum(v_dist.values()) for k, v in v_dist.items()})
+                    model.set_valid_distribution(v_distribution)
+
+                n_train_batches = math.ceil(data_file[2] / batch_size)
+                patience = 10 * n_train_batches # look at this many examples
+                patience_increase = 2.
+                improvement_threshold = 0.995
+                validation_freq = min(n_train_batches/2,patience/2)
+
+                best_valid_loss = np.inf
+
+                done_looping = False
+                f_epoch = 0
+                while f_epoch < fine_epochs and (not done_looping):
+                    fine_tune_cost = []
+                    for t_batch in range(math.ceil(data_file[2] / batch_size)):
+                        f_epoch += 1
+                        f_iter = (f_epoch -1 ) * n_train_batches + t_batch
+                        t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
+                        t_distribution.append({str(k): v / sum(t_dist.values()) for k, v in t_dist.items()})
+                        model.set_train_distribution(t_distribution)
+                        empty_slots = train_adaptive(t_batch)
+
+                        fine_tune_cost.append(finetune_adaptive(empty_slots))
+
+                        if (f_iter+1) % validation_freq == 0:
+                            n_valid_batches =  math.ceil(valid_file[2] / (batch_size))
+                            v_batch_idx = np.random.uniform(low = 0, high = n_valid_batches-1, size=10)
+                            valid_errs = []
+                            for v_batch in v_batch_idx:
+                                valid_errs.append(np.asscalar(finetune_valid_adaptive(int(v_batch))))
+
+                            curr_valid_loss = np.mean(valid_errs)
+
+                            if curr_valid_loss < best_valid_loss:
+
+                                if (curr_valid_loss < best_valid_loss * improvement_threshold):
+                                    patience = max(patience, f_iter * patience_increase)
+                                    print('Patience: ',patience)
+
+                                tmp_v_errs = []
+                                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                                    tmp_v_errs.append(np.asscalar(validate_func(v_batch)))
+                                print('Mean Validation Error: ', np.mean(tmp_v_errs))
+
+                                best_valid_loss = curr_valid_loss
+                            print('Iter: ', f_iter, 'Curr valid: ', curr_valid_loss, ', Best valid: ', best_valid_loss)
+
+                    #patience is here to check the maximum number of iterations it should check
+                    #before terminating
+                    if patience <= f_iter:
+                        print('Early stopping at iter: ', f_iter)
+                        done_looping = True
+                        break
 
             v_errors = []
             test_errors = []
@@ -290,6 +343,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                 print('batch ',i, ": ", t_err, end=', ')
             print()
             print('Mean Test Error: ', np.mean(test_errors))
+
 
         except StopIteration:
             pass
@@ -322,12 +376,12 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    learnMode = 'offline'
+    learnMode = 'online'
     learning_rate = 0.25
     batch_size = 100
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'SAE'
+    modelType = 'DeepRL'
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
     out_size = 10
@@ -336,7 +390,7 @@ def run():
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 15
+    iterations = 6
     pool_size = 10000
     early_stop = True
 
@@ -361,19 +415,21 @@ def run():
     print('\nloading data ...')
 
     if learnMode == 'online':
-        _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-        row_count = 10000
+        train_row_count = 10000
+        valid_row_count = 1000
         col_count = in_size + 1
-        row_idx = 0
         validation_errors = []
         test_errors  = []
 
         for i in range(50):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
-            row_idx = i * row_count
-            data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, iterations, valid_file, test_file, early_stop)
+            pre_epochs = 8
+            finetune_epochs = 40
+            data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
+            valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 

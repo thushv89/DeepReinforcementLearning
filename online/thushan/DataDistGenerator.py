@@ -32,22 +32,23 @@ def main():
     # therefore, using same seed make sure you endup with same rand sequence
     seed = 12
     pickle_file = 'data' + os.sep + 'mnist.pkl'
-    elements = 500000
-    granularity = 100 # number of samples per distribution
+    elements = 50000
+    granularity = 10 # number of samples per distribution
     effect = ''
 
     np.random.seed(seed)
     random.seed(seed)
 
     with open(pickle_file, 'rb') as f:
-        train, _, _ = pickle.load(f, encoding='latin1')
+        train, valid, _ = pickle.load(f, encoding='latin1')
 
     data = defaultdict(list)
-    train_x, train_y = train
-    create_image_from_vector(train_x[1,:],'test2')
+
+    data_x, data_y = valid
+
     # sort the data into bins depending on labels
-    for i in range(train_x.shape[0]):
-        data[train_y[i]].append(train_x[i])
+    for i in range(data_x.shape[0]):
+        data[data_y[i]].append(data_x[i])
 
     # randomly sample a GP
     def kernel(a, b):
@@ -68,7 +69,7 @@ def main():
 
     col_count =785
 
-    fp = np.memmap(filename='data'+os.sep+'mnist_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
+    fp = np.memmap(filename='data'+os.sep+'mnist_validation_non_station.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
@@ -92,17 +93,14 @@ def retrive_data():
     print('retrieving data ...')
     filename = 'data'+os.sep+'mnist_non_station.pkl'
 
-    row_count = 100000
+    row_count = 50000
     #with open('test.bin', 'br') as f:
     newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*785*81000,shape=(row_count,785))
     data_new = np.empty((row_count,785),dtype=np.float32)
     data_new[:] = newfp[:]
     arr = data_new[:,-1]
 
-    #data = np.load(filename).reshape(1000,785)
-    #idx = np.where(data == data_new[0,0])
-    #arr = data[:,-1]
-    granularity = 1000
+    granularity = 100
     for i in range(int(row_count/granularity)):
         logging.info(list(arr[i*granularity:(i+1)*granularity]))
 
