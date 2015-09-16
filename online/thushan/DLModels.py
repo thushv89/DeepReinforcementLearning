@@ -982,7 +982,7 @@ class DeepReinforcementLearningModel(Transformer):
 
         def finetune_adaptively(empty_slots):
 
-            costs = []
+
             # set up cost function
             mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
             mi_updates = []
@@ -1026,12 +1026,14 @@ class DeepReinforcementLearningModel(Transformer):
             if empty_slots:
                 print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
                 for _ in range(self.iterations):
+                    costs = []
                     for i in pool_indexes:
                         costs.append(mi_train(i, empty_slots))
 
             else:
                 print('Fine tuning the whole network with pool indexes: ', pool_indexes)
                 for _ in range(self.iterations):
+                    costs = []
                     for i in pool_indexes:
                         costs.append(combined_objective_tune(i))
 
@@ -1041,7 +1043,7 @@ class DeepReinforcementLearningModel(Transformer):
             update_valid_pool_func = self.build_valid_pool(v_x,v_y,batch_size)
             update_valid_pool_func(v_batch_id)
 
-            valid_costs = []
+
             valid_pool_indexes = self._valid_pool.as_size(int(self._valid_pool.size * 1), self._mi_batch_size)
 
             print('Fine tune validation with pool indexes:', valid_pool_indexes)
@@ -1049,6 +1051,7 @@ class DeepReinforcementLearningModel(Transformer):
             combined_obj_finetune,combined_obj_valid_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, self._valid_pool.data, self._valid_pool.data_y, batch_size)
 
             for _ in range(self.iterations):
+                valid_costs = []
                 for i in valid_pool_indexes:
                     valid_costs.append(combined_obj_valid_func(i))
 
