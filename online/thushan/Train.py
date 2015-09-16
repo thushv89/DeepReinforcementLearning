@@ -276,8 +276,8 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                 n_train_batches = math.ceil(data_file[2] / batch_size)
                 patience = 10 * n_train_batches # look at this many examples
                 patience_increase = 2.
-                improvement_threshold = 0.995
-                validation_freq = min(n_train_batches/2,patience/2)
+                improvement_threshold = 1.005
+                validation_freq = min(n_train_batches/10,patience/2)
 
                 best_valid_loss = np.inf
 
@@ -296,12 +296,13 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         fine_tune_cost.append(finetune_adaptive(empty_slots))
 
                         if (f_iter+1) % validation_freq == 0:
-                            n_valid_batches =  math.ceil(valid_file[2] / (batch_size))
-                            v_batch_idx = np.random.uniform(low = 0, high = n_valid_batches-1, size=10)
+                            print('Early stopping validation (',f_iter,')')
+                            n_valid_batches =  math.ceil(valid_file[2] /batch_size)
+                            #v_batch_idx = np.random.uniform(low = 0, high = n_valid_batches-1, size=10)
                             valid_errs = []
-                            for v_batch in v_batch_idx:
+                            for v_batch in range(n_valid_batches):
                                 valid_errs.append(np.asscalar(finetune_valid_adaptive(int(v_batch))))
-
+                                print('v_batch: ', v_batch, ' valid errs: ', valid_errs)
                             curr_valid_loss = np.mean(valid_errs)
 
                             if curr_valid_loss < best_valid_loss:
@@ -390,7 +391,7 @@ def run():
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 6
+    iterations = 3
     pool_size = 10000
     early_stop = True
 

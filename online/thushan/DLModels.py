@@ -852,6 +852,46 @@ class DeepReinforcementLearningModel(Transformer):
 
         return update_pools
 
+    # pool_relevent pools all the batches from the current to the last batch that satisfies
+        # cosine_dist(batch) < mean
+    def pool_relevant(self, pool, distribution, batch_size, current=None):
+
+        if current == None:
+            current = distribution[-1]
+
+        def magnitude(x):
+            '''  returns sqrt(sum(v(i)^2)) '''
+            return sum((v **2 for v in x.values() )) ** 0.5
+
+        def compare(x,y):
+            '''  Calculate Cosine distance between x and y '''
+            top = 0
+
+            for k in set(x) | set(y):
+                xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
+                top += xval * yval
+
+            return top / magnitude(x) * magnitude(y)
+
+        # score over batches for this pool
+        batches_covered = int(pool.size // batch_size)
+        print('batches covered: ', batches_covered)
+        print('range: ',range(-1,-1 - batches_covered))
+        # the below statement get the batch scores, batch scores are basically
+        # the cosine distance between a given batch and the current batch (last)
+        # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+        batch_scores = [(i % batches_covered, compare(current, distribution[i])) for i in range(-1,-1 - batches_covered)]
+        # mean is the mean cosine score
+        mean = np.mean([ v[1] for v in batch_scores ])
+
+        # takewhile(predicate, iterable) returns elements until the predicate is true
+        # get all the batches with batch score greater than mean
+        last = [0, 0]
+        for last in itertools.takewhile(lambda s: s[1] > mean, batch_scores):
+            pass
+
+        return 1 - (last[0] / batches_covered)
+
     def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
         valid_batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
@@ -886,43 +926,6 @@ class DeepReinforcementLearningModel(Transformer):
             weights /= sum(weights)
             return np.convolve(log, weights)[n-1:-n+1]
 
-        # pool_relevent pools all the batches from the current to the last batch that satisfies
-        # cosine_dist(batch) < mean
-        def pool_relevant(pool,distribution):
-
-            current = distribution[-1]
-
-            def magnitude(x):
-                '''  returns sqrt(sum(v(i)^2)) '''
-                return sum((v **2 for v in x.values() )) ** 0.5
-
-            def compare(x,y):
-                '''  Calculate Cosine distance between x and y '''
-                top = 0
-
-                for k in set(x) | set(y):
-                    xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
-                    top += xval * yval
-
-                return top / magnitude(x) * magnitude(y)
-
-            # score over batches for this pool
-            batches_covered = pool.size // batch_size
-            # the below statement get the batch scores, batch scores are basically
-            # the cosine distance between a given batch and the current batch (last)
-            # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
-            batch_scores = [(i % batches_covered, compare(current, distribution[i])) for i in range(-1,-1 - batches_covered)]
-            # mean is the mean cosine score
-            mean = np.mean([ v[1] for v in batch_scores ])
-
-            # takewhile(predicate, iterable) returns elements until the predicate is true
-            # get all the batches with batch score greater than mean
-            last = [0, 0]
-            for last in itertools.takewhile(lambda s: s[1] > mean, batch_scores):
-                pass
-
-            return 1 - (last[0] / batches_covered)
-
         # get early stopping
         def train_adaptively(batch_id):
 
@@ -943,7 +946,7 @@ class DeepReinforcementLearningModel(Transformer):
                 'mea_30': moving_average(self._error_log, 30),
                 'mea_15': moving_average(self._error_log, 15),
                 'mea_5': moving_average(self._error_log, 5),
-                'pool_relevant': pool_relevant(self._pool,self.train_distribution),
+                'pool_relevant': self.pool_relevant(self._pool,self.train_distribution,batch_size),
                 'initial_size': self.layers[-1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
                 'error_log': self._error_log,
@@ -1035,7 +1038,7 @@ class DeepReinforcementLearningModel(Transformer):
                 for _ in range(self.iterations):
                     costs = []
                     for i in pool_indexes:
-                        costs.append(combined_objective_tune(i))
+                        costs.append(np.asscalar(combined_objective_tune(i)))
 
             return np.mean(costs)
 
@@ -1043,18 +1046,17 @@ class DeepReinforcementLearningModel(Transformer):
             update_valid_pool_func = self.build_valid_pool(v_x,v_y,batch_size)
             update_valid_pool_func(v_batch_id)
 
-
-            valid_pool_indexes = self._valid_pool.as_size(int(self._valid_pool.size * 1), self._mi_batch_size)
-
-            print('Fine tune validation with pool indexes:', valid_pool_indexes)
+            #valid_pool_indexes = self._valid_pool.as_size(int(self._valid_pool.size * 1), self._mi_batch_size)
+            last_rel_pool_idx = self.pool_relevant(self._valid_pool,self.valid_distribution, batch_size, self.train_distribution[-1])-1
+            print('Idx of last relevant pool: ', last_rel_pool_idx, ', pool size: ', self._valid_pool.size)
+            print('Fine tune validation with pool indexes (Relevant):', np.arange(last_rel_pool_idx,self._valid_pool.size//batch_size))
 
             combined_obj_finetune,combined_obj_valid_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, self._valid_pool.data, self._valid_pool.data_y, batch_size)
 
             for _ in range(self.iterations):
                 valid_costs = []
-                for i in valid_pool_indexes:
-                    valid_costs.append(combined_obj_valid_func(i))
-
+                for i in range(int(last_rel_pool_idx),self._valid_pool.size//batch_size):
+                    valid_costs.append(np.asscalar(combined_obj_valid_func(int(i))))
             return np.mean(valid_costs)
 
         return train_adaptively,finetune_adaptively, finetune_validate_adaptively

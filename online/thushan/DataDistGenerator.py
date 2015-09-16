@@ -91,7 +91,7 @@ def main():
 def retrive_data():
 
     print('retrieving data ...')
-    filename = 'data'+os.sep+'mnist_non_station.pkl'
+    filename = 'data'+os.sep+'mnist_validation_non_station.pkl'
 
     row_count = 50000
     #with open('test.bin', 'br') as f:
