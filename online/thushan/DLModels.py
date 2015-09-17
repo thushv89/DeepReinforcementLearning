@@ -421,6 +421,7 @@ class Pool(object):
     def add_from_shared(self, index, batch_size, x, y):
         self.add(x[index * batch_size:(index+1) * batch_size].eval(), y[index * batch_size:(index+1) * batch_size].eval(), batch_size)
 
+    # this someway returns batch indexes
     def as_size(self, new_size, batch_size):
         batches = new_size // batch_size
         starting_index = self.position // batch_size
@@ -829,9 +830,11 @@ class DeepReinforcementLearningModel(Transformer):
 
         self.train_distribution = {}
         self.valid_distribution = {}
+
         self._error_log = []
         self._reconstruction_log = []
         self._neuron_balance_log = []
+        self._network_size_log = []
 
     def process(self, x, y):
         self._x = x
@@ -981,8 +984,11 @@ class DeepReinforcementLearningModel(Transformer):
 
             train_func(batch_id)
 
+            self._network_size_log.append(self.layers[0].W.get_value().shape[1])
+
             return empty_slots
 
+        # these methods are used for early stopping
         def finetune_adaptively(empty_slots):
 
 

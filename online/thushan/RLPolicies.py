@@ -126,13 +126,6 @@ class ContinuousState(Controller):
         elif action == self.Action.increment:
             funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)
 
-        actionStr = ''
-        if action == 1: actionStr = 'Pool'
-        elif action == 2: actionStr = 'Reduce'
-        elif action == 3: actionStr = 'Increment'
-
-        print('action taken: ', actionStr)
-
         self.prev_action = action
         self.prev_state = state
 

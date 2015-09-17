@@ -67,7 +67,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -76,7 +76,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_le
     if model_type == 'DeepRL':
         finetune_epochs = 40
         model = DLModels.DeepReinforcementLearningModel(
-            layers, corruption_level, rng, iterations, finetune_epochs, lam, batch_size, pool_size, pool_size/10, policy)
+            layers, corruption_level, rng, iterations, finetune_epochs, lam, batch_size, pool_size, valid_pool_size, policy)
     elif model_type == 'SAE':
         model = DLModels.StackedAutoencoderWithSoftmax(
             layers,corruption_level,rng,lam,iterations)
@@ -277,13 +277,14 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                 patience = 10 * n_train_batches # look at this many examples
                 patience_increase = 2.
                 improvement_threshold = 1.005
-                validation_freq = min(n_train_batches/10,patience/2)
+                validation_freq = min(n_train_batches,patience/2)
 
                 best_valid_loss = np.inf
 
-                done_looping = False
+
                 f_epoch = 0
-                while f_epoch < fine_epochs and (not done_looping):
+                while f_epoch < fine_epochs:
+                    print ('\n Fine Epoch: ', f_epoch)
                     fine_tune_cost = []
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
                         f_epoch += 1
@@ -296,7 +297,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         fine_tune_cost.append(finetune_adaptive(empty_slots))
 
                         if (f_iter+1) % validation_freq == 0:
-                            print('Early stopping validation (',f_iter,')')
+                            print('\nEarly stopping validation (',f_iter,')')
                             n_valid_batches =  math.ceil(valid_file[2] /batch_size)
                             #v_batch_idx = np.random.uniform(low = 0, high = n_valid_batches-1, size=10)
                             valid_errs = []
@@ -322,8 +323,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                     #patience is here to check the maximum number of iterations it should check
                     #before terminating
                     if patience <= f_iter:
-                        print('Early stopping at iter: ', f_iter)
-                        done_looping = True
+                        print('\nEarly stopping at iter: ', f_iter)
                         break
 
             v_errors = []
@@ -339,11 +339,11 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
             for i, v_err in enumerate(v_errors):
                 print('batch ',i, ": ", v_err, end=', ')
             print()
-            print('Mean Validation Error: ', np.mean(v_errors))
+            print('Mean Validation Error: ', np.mean(v_errors),'\n')
             for i, t_err in enumerate(test_errors):
                 print('batch ',i, ": ", t_err, end=', ')
             print()
-            print('Mean Test Error: ', np.mean(test_errors))
+            print('Mean Test Error: ', np.mean(test_errors),'\n')
 
 
         except StopIteration:
@@ -379,47 +379,53 @@ def run():
 
     learnMode = 'online'
     learning_rate = 0.25
-    batch_size = 100
+    batch_size = 500
     epochs = 1
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
-    valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
-    test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
     out_size = 10
     in_size = 784
     hid_sizes = [500,500,500]
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 3
+    iterations = 10
     pool_size = 10000
+    valid_pool_size = pool_size/2
     early_stop = True
 
-    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size)
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
+
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
     input_layer_size = model.layers[0].initial_size[0]
 
-    print('---------- Model Information -------------')
-    print('Learning Mode: ',learnMode)
-    print('Model type: ', modelType)
-    print('Batch size: ', batch_size)
-    print('Epochs: ', epochs)
+
+    model_info = '---------- Model Information -------------\n'
+    model_info += 'Learning Mode: ' + learnMode + '\n'
+    model_info += 'Model type: ' + modelType + '\n'
+    model_info += 'Batch size: ' + str(batch_size) + '\n'
+    model_info += 'Epochs: ' + str(epochs) + '\n'
 
     layers_str = str(in_size) + ', '
     for s in hid_sizes:
         layers_str += str(s) + ', '
     layers_str += str(out_size)
-    print('Network Configuration: ', layers_str)
-    print('Iterations: ', iterations)
-    print('Lambda Regularizing Coefficient: ', lam)
-    print('Pool Size: ', pool_size)
+    model_info += 'Network Configuration: ' + layers_str + '\n'
+    model_info += 'Iterations: ' + str(iterations) + '\n'
+    model_info += 'Lambda Regularizing Coefficient: ' + str(lam) + '\n'
+    model_info += 'Pool Size: ' + str(pool_size) + '\n'
 
+    print(model_info)
+    valid_logger.info(model_info)
+    test_logger.info(model_info)
     print('\nloading data ...')
 
     if learnMode == 'online':
         _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-        train_row_count = 10000
-        valid_row_count = 1000
+        train_row_count = 20000
+        valid_row_count = 4000
         col_count = in_size + 1
         validation_errors = []
         test_errors  = []
