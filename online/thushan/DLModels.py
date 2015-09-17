@@ -1055,7 +1055,7 @@ class DeepReinforcementLearningModel(Transformer):
 
             for _ in range(self.iterations):
                 valid_costs = []
-                for i in range(int(last_rel_pool_idx),self._valid_pool.size//batch_size):
+                for i in range(int(last_rel_pool_idx),int(self._valid_pool.size//batch_size)):
                     valid_costs.append(np.asscalar(combined_obj_valid_func(int(i))))
             return np.mean(valid_costs)
 
