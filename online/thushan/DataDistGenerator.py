@@ -55,12 +55,11 @@ def cifar_10_load():
 
     return all_data
 
-def main(dataset='mnist',file_name=None):
+def main(dataset='mnist',file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12):
 
     # seed the generator (Random num generators use pseudo-random sequences)
     # seed determines the starting position in that sequence for the random numbers
     # therefore, using same seed make sure you endup with same rand sequence
-    seed = 12
 
     if dataset == 'mnist':
         col_count =785
@@ -71,16 +70,12 @@ def main(dataset='mnist',file_name=None):
         col_count =3072 + 1
         train, valid, _ = cifar_10_load()
 
-    elements = 100000
-    granularity = 20 # number of samples per distribution
-    effect = ''
-
     np.random.seed(seed)
     random.seed(seed)
 
     data = defaultdict(list)
 
-    data_x, data_y = train
+    data_x, data_y = valid
 
     # sort the data into bins depending on labels
     for i in range(data_x.shape[0]):
@@ -149,7 +144,11 @@ def create_image_from_vector(vec, dataset):
 
 if __name__ == '__main__':
     logging.basicConfig(filename="labels.log", level=logging.DEBUG)
-    file_name = 'mnist_validation_non_station'
-    main('mnist',file_name)
+    file_name = 'cifar_10_non_station'
+    elements = 500000
+    granularity = 100
+    effects = 'noise'
+    seed = 12
+    main('cifar_10',file_name, elements, granularity,effects,seed)
     #retrive_data(file_name,3073, 'cifar_10')
     print('done...')

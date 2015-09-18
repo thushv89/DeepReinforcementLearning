@@ -276,11 +276,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                 n_train_batches = math.ceil(data_file[2] / batch_size)
                 patience = 10 * n_train_batches # look at this many examples
                 patience_increase = 2.
-                improvement_threshold = 1.005
+                improvement_threshold = 0.995
                 validation_freq = min(n_train_batches,patience/2)
 
                 best_valid_loss = np.inf
-
 
                 f_epoch = 0
                 while f_epoch < fine_epochs:
@@ -306,9 +305,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                                 print('v_batch: ', v_batch, ' valid errs: ', valid_errs)
                             curr_valid_loss = np.mean(valid_errs)
 
+                            print('Iter: ', f_iter, 'Curr valid: ', curr_valid_loss, ', Best valid: ', best_valid_loss)
                             if curr_valid_loss < best_valid_loss:
 
-                                if (curr_valid_loss < best_valid_loss * improvement_threshold):
+                                if curr_valid_loss < best_valid_loss * improvement_threshold:
                                     patience = max(patience, f_iter * patience_increase)
                                     print('Patience: ',patience)
 
@@ -318,7 +318,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                                 print('Mean Validation Error: ', np.mean(tmp_v_errs))
 
                                 best_valid_loss = curr_valid_loss
-                            print('Iter: ', f_iter, 'Curr valid: ', curr_valid_loss, ', Best valid: ', best_valid_loss)
+
 
                     #patience is here to check the maximum number of iterations it should check
                     #before terminating
@@ -439,7 +439,7 @@ def run():
         for i in range(int(500000/train_row_count)):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             pre_epochs = 8
-            finetune_epochs = 40
+            finetune_epochs = 25
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
             valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
             v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
@@ -451,7 +451,7 @@ def run():
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         pre_epochs = 8
-        finetune_epochs = 40
+        finetune_epochs = 25
         v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file)
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err))
