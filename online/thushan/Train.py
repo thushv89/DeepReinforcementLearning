@@ -12,6 +12,7 @@ import os
 import math
 import logging
 import numpy as np
+import time
 
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
     '''' Load data into shared variables '''
@@ -268,6 +269,8 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                 from collections import Counter
 
+                start_time = time.clock()
+
                 for v_batch in range(math.ceil(valid_file[2] / batch_size)):
                     v_dist = Counter(valid_file[1][v_batch * batch_size: (v_batch + 1) * batch_size].eval())
                     v_distribution.append({str(k): v / sum(v_dist.values()) for k, v in v_dist.items()})
@@ -283,9 +286,11 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                 f_epoch = 0
                 while f_epoch < fine_epochs:
+                    epoch_start_time = time.clock()
                     print ('\n Fine Epoch: ', f_epoch)
                     fine_tune_cost = []
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
+                        train_batch_start_time = time.clock()
                         f_epoch += 1
                         f_iter = (f_epoch -1 ) * n_train_batches + t_batch
                         t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
@@ -319,13 +324,16 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                                 best_valid_loss = curr_valid_loss
 
-
+                        train_batch_stop_time = time.clock()
+                        print('Time for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
                     #patience is here to check the maximum number of iterations it should check
                     #before terminating
                     if patience <= f_iter:
                         print('\nEarly stopping at iter: ', f_iter)
                         break
 
+                    epoch_stop_time = time.clock()
+                    print('Time for epoch ',f_epoch, ': ',(epoch_stop_time-epoch_start_time)/60,' (mins)')
             network_size_logger.info(model._network_size_log)
             model._network_size_log = []
 
@@ -352,6 +360,8 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         except StopIteration:
             pass
     print('done ...')
+    end_time = time.clock()
+    print('Time taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return v_errors,test_errors
 
 def get_logger(name, folder_path):

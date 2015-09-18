@@ -8,6 +8,7 @@ from theano import config
 import theano
 import theano.tensor as T
 import math
+import time
 
 class DiscreteRL(object):
     ''' Q learning model '''
@@ -91,3 +92,10 @@ if __name__ == '__main__':
     for i,val in enumerate(new_arr):
         print(i)
     print('')
+
+    t1 = time.clock()
+    time.sleep(61)
+    t2 = time.clock()
+
+    print(t2-t1)
+
