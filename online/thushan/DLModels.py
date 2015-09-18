@@ -2,12 +2,11 @@ __author__ = 'Thushan Ganegedara'
 
 import functools
 import itertools
-
 import theano
 import theano.tensor as T
-
 import numpy as np
-
+import logging
+import os
 from math import ceil
 
 def identity(x):

@@ -175,7 +175,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
     return v_errors,test_errors
 
 
-def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True):
+def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
     t_distribution = []
     v_distribution = []
 
@@ -326,6 +326,9 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         print('\nEarly stopping at iter: ', f_iter)
                         break
 
+            network_size_logger.info(model._network_size_log)
+            model._network_size_log = []
+
             v_errors = []
             test_errors = []
             for v_batch in range(math.ceil(valid_file[2] / batch_size)):
@@ -382,7 +385,7 @@ def run():
     batch_size = 500
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'DeepRL'
+    modelType = 'SAE'
     out_size = 10
     in_size = 784
     hid_sizes = [500,500,500]
@@ -396,6 +399,8 @@ def run():
 
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
+    if modelType == 'DeepRL':
+        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode,'logs')
 
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
     input_layer_size = model.layers[0].initial_size[0]
@@ -414,7 +419,8 @@ def run():
     model_info += 'Network Configuration: ' + layers_str + '\n'
     model_info += 'Iterations: ' + str(iterations) + '\n'
     model_info += 'Lambda Regularizing Coefficient: ' + str(lam) + '\n'
-    model_info += 'Pool Size: ' + str(pool_size) + '\n'
+    model_info += 'Pool Size (Train): ' + str(pool_size) + '\n'
+    model_info += 'Pool Size (Valid): ' + str(valid_pool_size) + '\n'
 
     print(model_info)
     valid_logger.info(model_info)
@@ -430,13 +436,13 @@ def run():
         validation_errors = []
         test_errors  = []
 
-        for i in range(50):
+        for i in range(int(500000/train_row_count)):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             pre_epochs = 8
             finetune_epochs = 40
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
             valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
-            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 
