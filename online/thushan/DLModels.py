@@ -949,7 +949,7 @@ class DeepReinforcementLearningModel(Transformer):
                 'mea_15': moving_average(self._error_log, 15),
                 'mea_5': moving_average(self._error_log, 5),
                 'pool_relevant': self.pool_relevant(self._pool,self.train_distribution,batch_size),
-                'initial_size': self.layers[-1].initial_size[0],
+                'initial_size': self.layers[1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
                 'error_log': self._error_log,
                 'errors': self._error_log[-1],
@@ -961,7 +961,9 @@ class DeepReinforcementLearningModel(Transformer):
             def merge_increment(func, pool, amount, merge, inc):
 
                 nonlocal neuron_balance
-                change = 1 + inc - merge
+                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' ratio: ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0]))
+                change = 1 + inc - merge + 0.25 * (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])
+                print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 
                 # pool.as_size(int(pool.size * amount), self._mi_batch_size) seems to provide indexes

@@ -176,7 +176,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
     return v_errors,test_errors
 
 
-def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
+def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None, rec_err_logger = None, err_logger = None):
     t_distribution = []
     v_distribution = []
 
@@ -334,8 +334,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                     epoch_stop_time = time.clock()
                     print('Time for epoch ',f_epoch, ': ',(epoch_stop_time-epoch_start_time)/60,' (mins)')
-            network_size_logger.info(model._network_size_log)
-            model._network_size_log = []
+                network_size_logger.info(model._network_size_log)
+                model._network_size_log = []
+                rec_err_logger.info(model._reconstruction_log)
+                err_logger.info(model._error_log)
 
             v_errors = []
             test_errors = []
@@ -392,17 +394,17 @@ def run():
 
     learnMode = 'online'
     learning_rate = 0.25
-    batch_size = 500
+    batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'SAE'
+    modelType = 'DeepRL'
     out_size = 10
     in_size = 784
     hid_sizes = [500,500,500]
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 10
+    iterations = 3
     pool_size = 10000
     valid_pool_size = pool_size/2
     early_stop = True
@@ -411,7 +413,8 @@ def run():
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
     if modelType == 'DeepRL':
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode,'logs')
-
+        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode,'logs')
+        error_logger = get_logger('error_'+modelType+'_'+learnMode,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
     input_layer_size = model.layers[0].initial_size[0]
 
@@ -449,10 +452,10 @@ def run():
         for i in range(int(500000/train_row_count)):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             pre_epochs = 8
-            finetune_epochs = 25
+            finetune_epochs = 10
             data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
             valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
-            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 
@@ -461,7 +464,7 @@ def run():
     else:
         data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         pre_epochs = 8
-        finetune_epochs = 25
+        finetune_epochs = 10
         v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file)
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err))
