@@ -26,18 +26,10 @@ def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
 
     return x_shared, y_shared, size
 
-def create_image_from_vector(vec,filename):
-    from PIL import Image
-    new_vec = vec*255.
-    img = Image.fromarray(np.reshape(vec,(28,28),order='C').astype(int),'L')
-    img.save(filename +'.png')
-
 def load_from_pickle(filename):
 
     with open(filename, 'rb') as handle:
         train, valid, test = pickle.load(handle, encoding='latin1')
-
-        create_image_from_vector(train[0][2,:],'test222')
 
         train = make_shared(train[0], train[1], 'train', False, 1.0)
         valid = make_shared(valid[0], valid[1], 'valid', False, 1.0)
@@ -50,8 +42,7 @@ def load_from_memmap(filename, row_count, col_count, start_row):
     fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*start_row,shape=(row_count,col_count))
     data = np.empty((row_count,col_count),dtype=np.float32)
     data[:] = fp[:]
-    test_labels = data[:,-1]
-    create_image_from_vector(data[2,:-1],'test22')
+    test_labesl = data[:,-1]
     train = make_shared(data[:,:-1],data[:,-1],'train',False, 1.0)
 
     return train
@@ -392,14 +383,17 @@ def run():
     logger = get_logger('debug','logs')
 
     dataset = 'cifar-10'
+    in_size = 3072
+    out_size = 10
+
     learnMode = 'online'
+    modelType = 'DeepRL'
+
     learning_rate = 0.25
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'DeepRL'
-    out_size = 10
-    in_size = 3072
+
     hid_sizes = [500,500,500]
 
     corruption_level = 0.2
@@ -409,13 +403,15 @@ def run():
     valid_pool_size = pool_size/2
     early_stop = True
 
-    valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
-    test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+
+    network_size_logger, reconstruction_err_logger, error_logger = None, None, None
 
     if modelType == 'DeepRL':
-        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode,'logs')
-        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode,'logs')
-        error_logger = get_logger('error_'+modelType+'_'+learnMode,'logs')
+        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
     input_layer_size = model.layers[0].initial_size[0]
 
@@ -445,15 +441,16 @@ def run():
         if dataset == 'mnist':
             _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         elif dataset == 'cifar-10':
-            f = open('Data' + os.sep + 'cifar_10_test_batch', 'rb')
+            f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
-            test_set = [dict.get('data')/255.,dict.get('labels')]
+            test_file = make_shared(np.asarray(dict.get('data')/255., dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', False, 1.0)
 
         train_row_count = 20000
         valid_row_count = 4000
         col_count = in_size + 1
         validation_errors = []
         test_errors  = []
+
 
         for i in range(int(500000/train_row_count)):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')

@@ -83,7 +83,7 @@ class ContinuousState(Controller):
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
-                neuron_penalty = (4/(1+np.exp(-i/500))) * abs(1 - data['neuron_balance'])
+                neuron_penalty = (4/(1+np.exp(-i/1000))) * abs(1 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
