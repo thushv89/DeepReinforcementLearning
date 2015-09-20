@@ -962,7 +962,7 @@ class DeepReinforcementLearningModel(Transformer):
 
                 nonlocal neuron_balance
                 print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' ratio: ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0]))
-                change = 1 + inc - merge + 0.25 * (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])
+                change = 1 + inc - merge + 0.08 * (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])
                 print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 

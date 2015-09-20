@@ -143,7 +143,7 @@ def create_image_from_vector(vec, dataset):
     show()
 
 if __name__ == '__main__':
-    logging.basicConfig(filename="labels.log", level=logging.DEBUG)
+    #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
     file_name = 'cifar_10_non_station'
     elements = 500000
     granularity = 100

@@ -325,7 +325,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                                 best_valid_loss = curr_valid_loss
 
                         train_batch_stop_time = time.clock()
-                        print('Time for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
+                        print('\nTime for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
                     #patience is here to check the maximum number of iterations it should check
                     #before terminating
                     if patience <= f_iter:
@@ -361,9 +361,8 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
         except StopIteration:
             pass
-    print('done ...')
     end_time = time.clock()
-    print('Time taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
+    print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return v_errors,test_errors
 
 def get_logger(name, folder_path):
@@ -392,6 +391,7 @@ def run():
 
     logger = get_logger('debug','logs')
 
+    dataset = 'cifar-10'
     learnMode = 'online'
     learning_rate = 0.25
     batch_size = 1000
@@ -399,18 +399,19 @@ def run():
     theano.config.floatX = 'float32'
     modelType = 'DeepRL'
     out_size = 10
-    in_size = 784
+    in_size = 3072
     hid_sizes = [500,500,500]
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 3
+    iterations = 10
     pool_size = 10000
     valid_pool_size = pool_size/2
     early_stop = True
 
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
+
     if modelType == 'DeepRL':
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode,'logs')
         reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode,'logs')
@@ -441,7 +442,12 @@ def run():
     print('\nloading data ...')
 
     if learnMode == 'online':
-        _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        if dataset == 'mnist':
+            _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        elif dataset == 'cifar-10':
+            f = open('Data' + os.sep + 'cifar_10_test_batch', 'rb')
+            dict = pickle.load(f,encoding='latin1')
+            test_set = [dict.get('data')/255.,dict.get('labels')]
 
         train_row_count = 20000
         valid_row_count = 4000
@@ -453,8 +459,13 @@ def run():
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             pre_epochs = 8
             finetune_epochs = 10
-            data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
-            valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+            if dataset == 'mnist':
+                data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
+                valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+            elif dataset == 'cifar-10':
+                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station.pkl',train_row_count,col_count,i * train_row_count)
+                valid_file = load_from_memmap('data' + os.sep + 'cifar_10_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+
             v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
             validation_errors.append(v_err)
             test_errors.append(test_err)
