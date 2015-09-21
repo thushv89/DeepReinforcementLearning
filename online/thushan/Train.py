@@ -338,10 +338,10 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
                 improvement_threshold = 0.995
                 t_costs = []
                 for t_batch in range(math.ceil(data_file[2] / batch_size)):
-                    print('Train batch: ', t_batch)
-                    print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
                     curr_train_err = train_mergeinc(t_batch, inc, inc*.5)
                     t_costs.append(curr_train_err)
+                    print('Train batch: ', t_batch, ' Train cost: ', curr_train_err)
+                    # when hard_pool is full ...
                     if ((t_batch+1)*batch_size) % (pool_size*2) == 0:
                         print('Hard pool is full...')
                         mean_train_error = np.mean(t_costs)
@@ -349,7 +349,9 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
                             inc = 1 - prev_train_err/mean_train_error
                         else:
                             inc = 0.
-                        print('Prev TrainErr: ', prev_train_err, ' Curr TrainErr: ', curr_train_err)
+
+                        print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
+                        print('Prev TrainErr: ', prev_train_err, ' Mean TrainErr: ', mean_train_error)
                         prev_train_err = mean_train_error
                         t_costs = []
 
