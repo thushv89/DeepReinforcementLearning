@@ -25,18 +25,10 @@ def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
 
     return x_shared, y_shared, size
 
-def create_image_from_vector(vec,filename):
-    from PIL import Image
-    new_vec = vec*255.
-    img = Image.fromarray(np.reshape(vec,(28,28),order='C').astype(int),'L')
-    img.save(filename +'.png')
-
 def load_from_pickle(filename):
 
     with open(filename, 'rb') as handle:
         train, valid, test = pickle.load(handle, encoding='latin1')
-
-        create_image_from_vector(train[0][2,:],'test222')
 
         train = make_shared(train[0], train[1], 'train', False, 1.0)
         valid = make_shared(valid[0], valid[1], 'valid', False, 1.0)
@@ -50,7 +42,6 @@ def load_from_memmap(filename, row_count, col_count, start_row):
     data = np.empty((row_count,col_count),dtype=np.float32)
     data[:] = fp[:]
     test_labels = data[:,-1]
-    create_image_from_vector(data[2,:-1],'test22')
     train = make_shared(data[:,:-1],data[:,-1],'train',False, 1.0)
 
     return train
@@ -109,7 +100,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
         if early_stopping:
             train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
         else:
-            train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, None, None)
+            train_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size)
 
         validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
@@ -141,31 +132,31 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
                     #          5)
                     #      , ' ', data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].shape)
 
-                    if (t_batch + 1) % 50 == 0:
-                        v_errors = []
-                        test_errors = []
-                        for v_batch in range(math.ceil(valid_file[2] / batch_size)):
-                            validate_results = validate_func(v_batch)
-                            act_pred_results = get_act_vs_pred_func(v_batch)
 
-                            print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
-                                  ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
-                            #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
-                            print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
-                            v_errors.append(np.asscalar(validate_results))
+                v_errors = []
+                test_errors = []
+                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                    validate_results = validate_func(v_batch)
+                    act_pred_results = get_act_vs_pred_func(v_batch)
 
-                        for test_batch in range(math.ceil(test_file[2] / batch_size)):
-                            test_results = test_func(test_batch)
-                            test_errors.append(np.asscalar(test_results))
+                    print('Actual y data for batch: ',format_array_to_print(valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].eval(),5)
+                          ,' ', valid_file[1][v_batch * batch_size : (v_batch + 1) * batch_size].shape)
+                    #print('Data sent to DLModels: ',format_array_to_print(act_pred_results[0],5),' ', act_pred_results[0].shape)
+                    print('Predicted data: ', format_array_to_print(act_pred_results[1],5), ' ', act_pred_results[1].shape)
+                    v_errors.append(np.asscalar(validate_results))
 
-                        for i, v_err in enumerate(v_errors):
-                            print('batch ',i, ": ", v_err, end=', ')
-                        print()
-                        print('Mean Validation Error: ', np.mean(v_errors))
-                        for i, t_err in enumerate(test_errors):
-                            print('batch ',i, ": ", t_err, end=', ')
-                        print()
-                        print('Mean Test Error: ', np.mean(test_errors))
+                for test_batch in range(math.ceil(test_file[2] / batch_size)):
+                    test_results = test_func(test_batch)
+                    test_errors.append(np.asscalar(test_results))
+
+                for i, v_err in enumerate(v_errors):
+                    print('batch ',i, ": ", v_err, end=', ')
+                print()
+                print('Mean Validation Error: ', np.mean(v_errors))
+                for i, t_err in enumerate(test_errors):
+                    print('batch ',i, ": ", t_err, end=', ')
+                print()
+                print('Mean Test Error: ', np.mean(test_errors))
 
 
         except StopIteration:
@@ -200,13 +191,12 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
             if modelType == 'DeepRL':
                 for t_batch in range(math.ceil(data_file[2] / batch_size)):
-                    if modelType == 'DeepRL':
-                        from collections import Counter
-                        dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
-                        distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
-                        model.set_distribution(distribution)
+                    from collections import Counter
+                    dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
+                    distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
+                    model.set_distribution(distribution)
 
-                        train_adaptive(t_batch)
+                    train_adaptive(t_batch)
 
             if modelType == 'SAE' and early_stop:
                 #########################################################################
@@ -320,25 +310,26 @@ def get_logger(name, folder_path):
 
 def run():
 
+    dataset = 'cifar-10'
+    in_size = 3072
+    out_size = 10
     logger = get_logger('debug','logs')
 
-    learnMode = 'offline'
+    learnMode = 'online'
     learning_rate = 0.25
-    batch_size = 100
+    batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
-    modelType = 'SAE'
+    modelType = 'DeepRL'
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode,'logs')
-    out_size = 10
-    in_size = 784
     hid_sizes = [500,500,500]
 
     corruption_level = 0.2
     lam = 0.1
     iterations = 15
     pool_size = 10000
-    early_stop = True
+    early_stop = False
 
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size)
     input_layer_size = model.layers[0].initial_size[0]
@@ -361,19 +352,28 @@ def run():
     print('\nloading data ...')
 
     if learnMode == 'online':
-        _, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
 
-        row_count = 10000
+        row_count = 20000
         col_count = in_size + 1
         row_idx = 0
         validation_errors = []
         test_errors  = []
 
-        for i in range(50):
+        for i in range(int(500000/row_count)):
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             row_idx = i * row_count
-            data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
-            v_err,test_err = train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, iterations, valid_file, test_file, early_stop)
+            if dataset == 'mnist':
+                data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',row_count,col_count,row_idx)
+                valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',row_count/2,col_count,row_idx)
+                _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+            elif dataset == 'cifar-10':
+                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station.pkl',row_count,col_count,row_idx)
+                valid_file = load_from_memmap('data' + os.sep + 'cifar_10_validation_non_station.pkl',row_count,col_count,row_idx)
+                f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
+                dict = pickle.load(f,encoding='latin1')
+                test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
+
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stop)
             validation_errors.append(v_err)
             test_errors.append(test_err)
 

@@ -524,7 +524,7 @@ class MergeIncrementingAutoencoder(Transformer):
         for ae in self._layered_autoencoders:
             ae.process(x,y)
 
-    def merge_inc_func(self, learning_rate, batch_size, x, y, v_x, v_y):
+    def merge_inc_func(self, learning_rate, batch_size, x, y):
 
         m = T.matrix('m')
         # map operation applies a certain function to a sequence. This is the upper part of cosine dist eqn
@@ -548,7 +548,7 @@ class MergeIncrementingAutoencoder(Transformer):
         # fintune is done by optimizing cross-entropy between x and reconstructed_x
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         # actual fine tuning using softmax error + reconstruction error
-        combined_objective_tune = self._combined_objective.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size)
+        combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
 
         # set up cost function
         mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
