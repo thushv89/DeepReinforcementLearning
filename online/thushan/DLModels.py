@@ -819,15 +819,18 @@ class DeepReinforcementLearningModel(Transformer):
         # _hard_pool: has data points only that are above average reconstruction error
         self._pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
+        self._diff_pool = Pool(layers[0].initial_size[0], pool_size)
 
         self._valid_pool = Pool(layers[0].initial_size[0], valid_pool_size)
         self._valid_hard_pool = Pool(layers[0].initial_size[0], valid_pool_size)
 
+
         self.iterations = iterations
         self.lam = lam
 
-        self.train_distribution = {}
-        self.valid_distribution = {}
+        self.train_distribution = []
+        self.valid_distribution = []
+        self.pool_distribution = []
 
         self._error_log = []
         self._reconstruction_log = []
@@ -852,6 +855,46 @@ class DeepReinforcementLearningModel(Transformer):
             print('added batch: ',v_batch_id, ' valid pool size: ',self._valid_pool.size)
 
         return update_pools
+
+    def pool_if_different(self, pool, pool_dist, batch_id, current, batch_size,x, y):
+        print('Pool if different ...')
+        def magnitude(x):
+            '''  returns sqrt(sum(v(i)^2)) '''
+            return sum((v **2 for v in x.values() )) ** 0.5
+
+        def compare(x,y):
+            '''  Calculate Cosine distance between x and y '''
+            top = 0
+
+            for k in set(x) | set(y):
+                xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
+                top += xval * yval
+
+            return top / magnitude(x) * magnitude(y)
+
+
+        # the below statement get the batch scores, batch scores are basically
+        # the cosine distance between a given batch and the current batch (last)
+        # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+        if len(pool_dist)>0:
+            batch_scores = [(i, compare(current, pool_dist[i])) for i in range(len(pool_dist))]
+            # mean is the mean cosine score
+            #mean = np.mean([ v[1] for v in batch_scores ])
+
+            print('max diff: ', np.max([s[1] for s in batch_scores]))
+            if np.max([s[1] for s in batch_scores]) < 0.45:
+                print('added to pool', batch_id)
+                if len(pool_dist) == pool.max_size/batch_size:
+                    pool_dist.pop(0)
+                pool_dist.append(current)
+                pool.add_from_shared(batch_id, batch_size, x, y)
+        else:
+            print('added to pool', batch_id)
+            pool_dist.append(current)
+            pool.add_from_shared(batch_id, batch_size, x, y)
+
+
+
 
     # pool_relevent pools all the batches from the current to the last batch that satisfies
         # cosine_dist(batch) < mean
@@ -913,6 +956,7 @@ class DeepReinforcementLearningModel(Transformer):
 
         train_func_pool = self._softmax.train_func(arc, learning_rate, self._pool.data, self._pool.data_y, batch_size, apply_x)
         train_func_hard_pool = self._softmax.train_func(arc, learning_rate, self._hard_pool.data, self._hard_pool.data_y, batch_size, apply_x)
+        train_func_diff_pool = self._softmax.train_func(arc, learning_rate, self._diff_pool.data, self._diff_pool.data_y, batch_size, apply_x)
 
         neuron_balance = 1
 
@@ -942,6 +986,8 @@ class DeepReinforcementLearningModel(Transformer):
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
+
+            self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
@@ -983,6 +1029,11 @@ class DeepReinforcementLearningModel(Transformer):
             self._controller.move(len(self._error_log), data, funcs)
 
             #train_func(batch_id)
+            print('Diff pool size: ',self._diff_pool.size)
+
+            if(self._diff_pool.size/batch_size >= 5):
+                print('Train with Diff pool ...')
+                train_pool(self._diff_pool,train_func_diff_pool,1)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 

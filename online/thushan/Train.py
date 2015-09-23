@@ -444,8 +444,8 @@ def run():
     in_size = 3072
     out_size = 10
 
-    learnMode = 'offline'
-    modelType = 'SAE'
+    learnMode = 'online'
+    modelType = 'DeepRL'
 
     learning_rate = 0.25
     batch_size = 1000
@@ -504,7 +504,7 @@ def run():
         elif dataset == 'cifar-10':
             f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
-            test_file = make_shared(np.asarray(dict.get('data')/255., dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', False, 1.0)
+            test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
 
         train_row_count = 20000
         valid_row_count = 4000

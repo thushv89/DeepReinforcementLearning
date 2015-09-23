@@ -87,15 +87,6 @@ if __name__ == '__main__':
 
     y_new_mat = y_mat.get_value()
 
-    new_arr = [1,2,3,4,5]
-
-    print('sdfa')
-
-    items = set()
-
-    items.update([1,2,6,42,25])
-    items.update([3,4,6])
-
-    new_items = [i for i in list(items) if i<=6]
-    print(new_items)
+    batch_scores = [(i, i+5) for i in range(5,10)]
+    print(np.min([s[1] for s in batch_scores]))
 
