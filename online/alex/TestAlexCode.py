@@ -89,13 +89,13 @@ if __name__ == '__main__':
 
     new_arr = [1,2,3,4,5]
 
-    for i,val in enumerate(new_arr):
-        print(i)
-    print('')
+    print('sdfa')
 
-    t1 = time.clock()
-    time.sleep(61)
-    t2 = time.clock()
+    items = set()
 
-    print(t2-t1)
+    items.update([1,2,6,42,25])
+    items.update([3,4,6])
+
+    new_items = [i for i in list(items) if i<=6]
+    print(new_items)
 

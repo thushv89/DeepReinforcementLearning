@@ -875,9 +875,9 @@ class DeepReinforcementLearningModel(Transformer):
             return top / magnitude(x) * magnitude(y)
 
         # score over batches for this pool
+        # used to get only the distributions of the batches actually in the pool
         batches_covered = int(pool.size // batch_size)
-        print('batches covered: ', batches_covered)
-        print('range: ',range(-1,-1 - batches_covered))
+
         # the below statement get the batch scores, batch scores are basically
         # the cosine distance between a given batch and the current batch (last)
         # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
@@ -982,7 +982,7 @@ class DeepReinforcementLearningModel(Transformer):
 
             self._controller.move(len(self._error_log), data, funcs)
 
-            train_func(batch_id)
+            #train_func(batch_id)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
@@ -1027,7 +1027,7 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
-            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
+            combined_objective_tune = self._softmax.train_func(0, learning_rate/2, self._pool.data, self._pool.data_y, batch_size)
 
             # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
             pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)

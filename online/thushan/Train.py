@@ -179,8 +179,12 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
 
         if modelType == 'DeepRL':
             train_adaptive,finetune_adaptive, finetune_valid_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            get_act_vs_pred_valid_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
+            get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
         elif modelType == 'SAE':
             pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            get_act_vs_pred_valid_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
+            get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
         elif modelType == 'MergeInc':
             train_mergeinc = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, None, None)
 
@@ -216,10 +220,15 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
                 f_epoch = 0
                 while f_epoch < fine_epochs and (not done_looping):
                     f_epoch += 1
-                    fine_tune_cost = []
+                    fine_tune_costs = []
                     for t_batch in range(n_train_batches):
+                        from collections import Counter
+
+                        t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
+                        print('Train batch: ', t_batch, ' Distribution: ', t_dist)
+
                         cost = finetune_func(t_batch)
-                        fine_tune_cost.append(cost)
+                        fine_tune_costs.append(cost)
                         #what's the role of iter? iter acts as follows
                         #in first epoch, iter for minibatch 'x' is x
                         #in second epoch, iter for minibatch 'x' is n_train_batches + x
@@ -262,6 +271,8 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
 
             elif modelType == 'DeepRL' and early_stop:
 
+                all_empty_slots = set()
+                last_empty_slots = []
                 from collections import Counter
 
                 for v_batch in range(math.ceil(valid_file[2] / batch_size)):
@@ -281,7 +292,7 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
                 while f_epoch < fine_epochs:
                     epoch_start_time = time.clock()
                     print ('\n Fine Epoch: ', f_epoch)
-                    fine_tune_cost = []
+                    fine_tune_costs = []
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
                         train_batch_start_time = time.clock()
                         f_epoch += 1
@@ -289,9 +300,15 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
                         t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
                         t_distribution.append({str(k): v / sum(t_dist.values()) for k, v in t_dist.items()})
                         model.set_train_distribution(t_distribution)
+                        print('Train batch: ', t_batch, ' Distribution: ', t_dist)
                         empty_slots = train_adaptive(t_batch)
 
-                        fine_tune_cost.append(finetune_adaptive(empty_slots))
+                        if empty_slots:
+                            last_empty_slots = empty_slots
+                            print('Fine tuning for specific neurons ...')
+                            all_empty_slots.update(empty_slots)
+
+                        fine_tune_costs.append(finetune_adaptive(empty_slots))
 
                         if (f_iter+1) % validation_freq == 0:
                             print('\nEarly stopping validation (',f_iter,')')
@@ -327,6 +344,13 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
 
                     epoch_stop_time = time.clock()
                     print('Time for epoch ',f_epoch, ': ',(epoch_stop_time-epoch_start_time)/60,' (mins)')
+
+                # fine tune all empty slots. thi function uses the pool to fintune
+                refined_empty_slots = [i for i in list(all_empty_slots) if i<=np.max(last_empty_slots)]
+                #if refined_empty_slots and not len(refined_empty_slots)==0:
+                #    print('Finetuning all empty slots for this stream')
+                #    finetune_adaptive(refined_empty_slots)
+
                 network_size_logger.info(model._network_size_log)
                 model._network_size_log = []
                 rec_err_logger.info(model._reconstruction_log)
@@ -358,14 +382,22 @@ def train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, fin
 
             v_errors = []
             test_errors = []
+            print('\nValidation phase ...\n')
             for v_batch in range(math.ceil(valid_file[2] / batch_size)):
                 validate_results = validate_func(v_batch)
                 v_errors.append(np.asscalar(validate_results))
-
+                if modelType == 'DeepRL' or modelType=='SAE':
+                    act_vs_pred_valid = get_act_vs_pred_valid_func(v_batch)
+                    print('Actual: ', act_vs_pred_valid[0])
+                    print('Predicted: ', act_vs_pred_valid[1])
+            print('\nTesting phase ...\n')
             for test_batch in range(math.ceil(test_file[2] / batch_size)):
                 test_results = test_func(test_batch)
                 test_errors.append(np.asscalar(test_results))
-
+                if modelType == 'DeepRL' or modelType=='SAE':
+                    act_vs_pred_test = get_act_vs_pred_test_func(test_batch)
+                    print('Actual: ', act_vs_pred_test[0])
+                    print('Predicted: ', act_vs_pred_test[1])
             for i, v_err in enumerate(v_errors):
                 print('batch ',i, ": ", v_err, end=', ')
             print()
@@ -408,12 +440,12 @@ def run():
 
     logger = get_logger('debug','logs')
 
-    dataset = 'mnist'
-    in_size = 784
+    dataset = 'cifar-10'
+    in_size = 3072
     out_size = 10
 
-    learnMode = 'online'
-    modelType = 'MergeInc'
+    learnMode = 'offline'
+    modelType = 'SAE'
 
     learning_rate = 0.25
     batch_size = 1000
@@ -424,12 +456,12 @@ def run():
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 10
+    iterations = 8
     pool_size = 10000
     valid_pool_size = pool_size/2
     early_stop = True
 
-    pre_epochs = 8
+    pre_epochs = 5
     finetune_epochs = 10
 
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset,'logs')
@@ -497,9 +529,34 @@ def run():
             valid_logger.info(list(v_err))
             test_logger.info(list(test_err))
     else:
-        data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        if dataset == 'mnist':
+            data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        elif dataset == 'cifar-10':
+            train_names = ['cifar_10_data_batch_1','cifar_10_data_batch_2','cifar_10_data_batch_3','cifar_10_data_batch_4']
+            valid_name = 'cifar_10_data_batch_5'
+            test_name = 'cifar_10_test_batch'
 
-        v_err,test_err = train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file)
+            data_x = []
+            data_y = []
+            for file_path in train_names:
+                f = open('data' + os.sep +file_path, 'rb')
+                dict = pickle.load(f,encoding='latin1')
+                data_x.extend(dict.get('data'))
+                data_y.extend(dict.get('labels'))
+
+            data_file = make_shared(np.asarray(data_x,dtype=theano.config.floatX),np.asarray(data_y,theano.config.floatX),'train',True, 255.)
+
+            f = open('data' + os.sep +valid_name, 'rb')
+            dict = pickle.load(f,encoding='latin1')
+            valid_file = make_shared(np.asarray(dict.get('data'),dtype=theano.config.floatX),np.asarray(dict.get('labels'),dtype=theano.config.floatX),'valid',True, 255.)
+
+            f = open('data' + os.sep +test_name, 'rb')
+            dict = pickle.load(f,encoding='latin1')
+            test_file = make_shared(np.asarray(dict.get('data'),dtype=theano.config.floatX),np.asarray(dict.get('labels'),dtype=theano.config.floatX),'test',True, 255.)
+
+            f.close()
+
+        v_err,test_err = train_validate_and_test_v2(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err))
 
