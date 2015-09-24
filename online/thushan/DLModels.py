@@ -1082,6 +1082,11 @@ class DeepReinforcementLearningModel(Transformer):
             # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
             pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
 
+            print('Greedy pre-train ...')
+            for _ in range(self.iterations):
+                for i in pool_indexes:
+                    ae_finetune_func(i)
+
             if empty_slots:
                 print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
                 for _ in range(self.iterations):
@@ -1090,11 +1095,12 @@ class DeepReinforcementLearningModel(Transformer):
                         mi_train(i, empty_slots)
 
 
-            print('Fine tuning the whole network with pool indexes: ', pool_indexes)
-            for _ in range(self.iterations):
-                costs = []
-                for i in pool_indexes:
-                    costs.append(np.asscalar(combined_objective_tune(i)))
+            else:
+                print('Fine tuning the whole network with pool indexes: ', pool_indexes)
+                for _ in range(self.iterations):
+                    costs = []
+                    for i in pool_indexes:
+                        costs.append(np.asscalar(combined_objective_tune(i)))
 
             return np.mean(costs)
 
