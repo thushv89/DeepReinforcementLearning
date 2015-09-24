@@ -131,7 +131,7 @@ def retrive_data(file_name, col_count,dataset):
     data_new[:] = newfp[:]
     arr = data_new[:,-1]
 
-    create_image_from_vector(data_new[56,:-1],dataset)
+    create_image_from_vector(data_new[435,:-1],dataset)
 
 def create_image_from_vector(vec, dataset):
     from pylab import imshow,show,cm
@@ -149,6 +149,6 @@ if __name__ == '__main__':
     granularity = 100
     effects = 'noise'
     seed = 12
-    main('cifar_10',file_name, elements, granularity,effects,seed)
-    #retrive_data(file_name,3073, 'cifar_10')
+    #main('cifar_10',file_name, elements, granularity,effects,seed)
+    retrive_data(file_name,3073, 'cifar_10')
     print('done...')

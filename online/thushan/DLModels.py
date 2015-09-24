@@ -987,7 +987,7 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
-            self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
+            #self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
@@ -1025,15 +1025,14 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             #this is where reinforcement learning comes to play
-
             self._controller.move(len(self._error_log), data, funcs)
 
-            #train_func(batch_id)
-            print('Diff pool size: ',self._diff_pool.size)
+            train_func(batch_id)
 
-            if(self._diff_pool.size/batch_size >= 5):
-                print('Train with Diff pool ...')
-                train_pool(self._diff_pool,train_func_diff_pool,1)
+            #print('Diff pool size: ',self._diff_pool.size)
+            #if(self._diff_pool.size/batch_size >= 5):
+            #    print('Train with Diff pool ...')
+            #    train_pool(self._diff_pool,train_func_diff_pool,1)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
@@ -1078,7 +1077,7 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
-            combined_objective_tune = self._softmax.train_func(0, learning_rate/2, self._pool.data, self._pool.data_y, batch_size)
+            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
 
             # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
             pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
@@ -1088,14 +1087,14 @@ class DeepReinforcementLearningModel(Transformer):
                 for _ in range(self.iterations):
                     costs = []
                     for i in pool_indexes:
-                        costs.append(mi_train(i, empty_slots))
+                        mi_train(i, empty_slots)
 
-            else:
-                print('Fine tuning the whole network with pool indexes: ', pool_indexes)
-                for _ in range(self.iterations):
-                    costs = []
-                    for i in pool_indexes:
-                        costs.append(np.asscalar(combined_objective_tune(i)))
+
+            print('Fine tuning the whole network with pool indexes: ', pool_indexes)
+            for _ in range(self.iterations):
+                costs = []
+                for i in pool_indexes:
+                    costs.append(np.asscalar(combined_objective_tune(i)))
 
             return np.mean(costs)
 
