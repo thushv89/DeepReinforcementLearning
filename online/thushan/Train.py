@@ -543,7 +543,7 @@ def run():
             if not modelType == 'MergeInc':
                 v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
             else:
-                v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
+                v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger)
 
             validation_errors.append(v_err)
             test_errors.append(test_err)

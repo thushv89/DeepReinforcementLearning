@@ -1025,7 +1025,7 @@ class DeepReinforcementLearningModel(Transformer):
 
                 nonlocal neuron_balance
                 print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-2): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
-                change = 1 + inc - merge + 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
+                change = 1 + inc - merge + 0.1 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.5)
                 print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 
@@ -1122,54 +1122,7 @@ class MergeIncDAE(Transformer):
             for i in pool.as_size(int(pool.size * amount), batch_size):
                 pool_func(i)
 
-        # these methods are used for early stopping
-        def finetune_mergeinc(empty_slots):
 
-            # set up cost function
-            mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
-            mi_updates = []
-
-            # calculating merge_inc updates
-            # increment a subtensor by a certain value
-            for i, nnlayer in enumerate(self._autoencoder.layers):
-                # do the inc_subtensor update only for the first layer
-                # update the rest of the layers normally
-                if i == 0:
-                    # removed ".T" in the T.grad operation. It seems having .T actually
-                    # causes a dimension mismatch
-                    mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
-                                    - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
-                    mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
-                                    - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
-                else:
-                    mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
-                    mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
-
-                mi_updates += [(nnlayer.b_prime, -learning_rate * T.grad(mi_cost,nnlayer.b_prime))]
-
-            softmax_theta = [self.layers[-1].W, self.layers[-1].b]
-
-            mi_updates += [(param, param - learning_rate * grad)
-                           for param, grad in zip(softmax_theta, T.grad(mi_cost, softmax_theta))]
-
-            idx = T.iscalar('idx')
-
-            given = {
-                self._x : self._pool.data[idx*batch_size : (idx+1) * batch_size],
-                self._y : self._pool.data_y[idx*batch_size : (idx+1) * batch_size]
-            }
-
-            mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
-            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
-
-            # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
-            pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
-
-            if empty_slots:
-                print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
-                for _ in range(self.iterations):
-                    for i in pool_indexes:
-                        mi_train(i, empty_slots)
 
         def train_mergeinc(batch_id, inc, merge):
 
@@ -1181,8 +1134,7 @@ class MergeIncDAE(Transformer):
             print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
-                empty_slots = merge_inc_func_hard_pool(pool_indexes, merge, inc)
-                finetune_mergeinc(empty_slots)
+                merge_inc_func_hard_pool(pool_indexes, merge, inc)
                 self._hard_pool.clear()
 
             cost = train_func(batch_id)
