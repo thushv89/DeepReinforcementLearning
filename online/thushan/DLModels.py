@@ -710,6 +710,15 @@ class MergeIncrementingAutoencoder(Transformer):
                 for i in pool_indexes:
                     finetune(i)
 
+            # finetune with supervised
+            if empty_slots:
+                for _ in range(self.iterations):
+                    for i in pool_indexes:
+                        mi_train(i, empty_slots)
+            else:
+                for i in pool_indexes:
+                    combined_objective_tune(i)
+
             return empty_slots
 
         return merge_model
@@ -936,9 +945,14 @@ class DeepReinforcementLearningModel(Transformer):
 
         return 1 - (last[0] / batches_covered)
 
+    def get_batch_count(self, data_y):
+        from collections import Counter
+        dist = Counter(data_y)
+        norm_dist = {str(k): v / sum(dist.values()) for k, v in dist.items()}
+        return norm_dist
+
     def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
-        valid_batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
         ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
@@ -987,6 +1001,12 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
+            if self._pool.size > 0:
+                print('Pool Distribution ...')
+                pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
+                for i in pool_indexes:
+                    print(self.get_batch_count(self._pool.data_y[i * batch_size : (i + 1) * batch_size].eval()))
+
             #self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
 
             data = {
@@ -1006,8 +1026,8 @@ class DeepReinforcementLearningModel(Transformer):
             def merge_increment(func, pool, amount, merge, inc):
 
                 nonlocal neuron_balance
-                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' ratio (x-1): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
-                change = 1 + inc - merge #+ 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
+                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-1): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
+                change = 1 + inc - merge + 0.025 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
                 print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 

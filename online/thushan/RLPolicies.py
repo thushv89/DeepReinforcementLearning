@@ -104,8 +104,6 @@ class ContinuousState(Controller):
         #the first time move() is called
         if len(gps) == 0 or i <= 50:
             action = list(self.Action)[i % len(self.Action)]
-            if action == self.Action.reduce:
-                action = self.Action.pool
             print('evenly chose:', action)
         else:
             # determine best action by sampling the GPs

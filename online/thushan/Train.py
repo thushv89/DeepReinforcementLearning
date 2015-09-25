@@ -16,11 +16,14 @@ import time
 
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
     '''' Load data into shared variables '''
+
+
     if not normalize:
         x_shared = theano.shared(batch_x, name + '_x_pkl')
     else:
         x_shared = theano.shared(batch_x, name + '_x_pkl')/normalize_thresh
 
+    assert 0.004<=np.max(x_shared.eval())<=1.
     y_shared = T.cast(theano.shared(batch_y.astype(theano.config.floatX), name + '_y_pkl'), 'int32')
     size = batch_x.shape[0]
 
@@ -88,6 +91,15 @@ def format_array_to_print(arr, num_ele=5):
         s += '%.3f' %(arr[i]) + ", "
 
     return s
+
+def create_image_from_vector(vec, dataset):
+    from pylab import imshow,show,cm
+    if dataset == 'mnist':
+        imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
+    elif dataset == 'cifar-10':
+        new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
+        imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
+    show()
 
 def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model, modelType, valid_file, test_file, early_stopping):
     distribution = []
@@ -229,6 +241,12 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                         cost = finetune_func(t_batch)
                         fine_tune_costs.append(cost)
+
+
+                        act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
+                        print('Actual: ', act_vs_pred_train[0])
+                        print('Predicted: ', act_vs_pred_train[1])
+
                         #what's the role of iter? iter acts as follows
                         #in first epoch, iter for minibatch 'x' is x
                         #in second epoch, iter for minibatch 'x' is n_train_batches + x
@@ -269,10 +287,8 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                 for f_epoch in range(fine_epochs):
                     finetune_func(t_batch)
 
-            elif modelType == 'DeepRL' and early_stop:
+            elif modelType == 'DeepRL':
 
-                all_empty_slots = set()
-                last_empty_slots = []
                 from collections import Counter
 
                 for v_batch in range(math.ceil(valid_file[2] / batch_size)):
@@ -280,80 +296,36 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                     v_distribution.append({str(k): v / sum(v_dist.values()) for k, v in v_dist.items()})
                     model.set_valid_distribution(v_distribution)
 
-                n_train_batches = math.ceil(data_file[2] / batch_size)
-                patience = 10 * n_train_batches # look at this many examples
-                patience_increase = 2.
-                improvement_threshold = 0.995
-                validation_freq = min(n_train_batches,patience/2)
-
-                best_valid_loss = np.inf
-
-                f_epoch = 0
-                while f_epoch < fine_epochs:
+                for f_epoch in range(fine_epochs):
                     epoch_start_time = time.clock()
                     print ('\n Fine Epoch: ', f_epoch)
                     fine_tune_costs = []
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
                         train_batch_start_time = time.clock()
-                        f_epoch += 1
-                        f_iter = (f_epoch -1 ) * n_train_batches + t_batch
+
                         t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
                         t_distribution.append({str(k): v / sum(t_dist.values()) for k, v in t_dist.items()})
                         model.set_train_distribution(t_distribution)
                         print('Train batch: ', t_batch, ' Distribution: ', t_dist)
+
                         empty_slots = train_adaptive(t_batch)
-
-                        if empty_slots:
-                            last_empty_slots = empty_slots
-                            print('Fine tuning for specific neurons ...')
-                            all_empty_slots.update(empty_slots)
-
-                        fine_tune_costs.append(finetune_adaptive(empty_slots))
+                        #fine_tune_costs.append(finetune_adaptive(empty_slots))
 
                         if modelType == 'DeepRL' or modelType=='SAE':
                             act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
                             print('Actual: ', act_vs_pred_train[0])
                             print('Predicted: ', act_vs_pred_train[1])
-                        if (f_iter+1) % validation_freq == 0:
-                            print('\nEarly stopping validation (',f_iter,')')
-                            n_valid_batches =  math.ceil(valid_file[2] /batch_size)
-                            #v_batch_idx = np.random.uniform(low = 0, high = n_valid_batches-1, size=10)
-                            valid_errs = []
-                            for v_batch in range(n_valid_batches):
-                                valid_errs.append(np.asscalar(finetune_valid_adaptive(int(v_batch))))
-                                print('v_batch: ', v_batch, ' valid errs: ', valid_errs)
-                            curr_valid_loss = np.mean(valid_errs)
-
-                            print('Iter: ', f_iter, 'Curr valid: ', curr_valid_loss, ', Best valid: ', best_valid_loss)
-                            if curr_valid_loss < best_valid_loss:
-
-                                if curr_valid_loss < best_valid_loss * improvement_threshold:
-                                    patience = max(patience, f_iter * patience_increase)
-                                    print('Patience: ',patience)
-
-                                tmp_v_errs = []
-                                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
-                                    tmp_v_errs.append(np.asscalar(validate_func(v_batch)))
-                                print('Mean Validation Error: ', np.mean(tmp_v_errs))
-
-                                best_valid_loss = curr_valid_loss
 
                         train_batch_stop_time = time.clock()
                         print('\nTime for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
-                    #patience is here to check the maximum number of iterations it should check
-                    #before terminating
-                    if patience <= f_iter:
-                        print('\nEarly stopping at iter: ', f_iter)
-                        break
 
                     epoch_stop_time = time.clock()
                     print('Time for epoch ',f_epoch, ': ',(epoch_stop_time-epoch_start_time)/60,' (mins)')
 
-                # fine tune all empty slots. thi function uses the pool to fintune
-                refined_empty_slots = [i for i in list(all_empty_slots) if i<=np.max(last_empty_slots)]
-                #if refined_empty_slots and not len(refined_empty_slots)==0:
-                #    print('Finetuning all empty slots for this stream')
-                #    finetune_adaptive(refined_empty_slots)
+                tmp_v_errs = []
+                for v_batch in range(math.ceil(valid_file[2] / batch_size)):
+                    tmp_v_errs.append(np.asscalar(validate_func(v_batch)))
+                print('Mean Validation Error: ', np.mean(tmp_v_errs))
 
                 network_size_logger.info(model._network_size_log)
                 model._network_size_log = []
@@ -390,6 +362,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
         except StopIteration:
             pass
+
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return v_errors,test_errors
@@ -485,24 +458,24 @@ def run():
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'DeepRL'
+    modelType = 'MergeInc'
 
     learning_rate = 0.25
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [1000,500,500]
+    hid_sizes = [500,500,500]
 
     corruption_level = 0.2
     lam = 0.1
-    iterations = 5
+    iterations = 10
     pool_size = 10000
-    valid_pool_size = pool_size/2
+    valid_pool_size = pool_size//2
     early_stop = True
 
     pre_epochs = 5
-    finetune_epochs = 5
+    finetune_epochs = 1
 
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset,'logs')
@@ -546,8 +519,8 @@ def run():
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
 
-        train_row_count = 20000
-        valid_row_count = 4000
+        train_row_count = batch_size
+        valid_row_count = batch_size
         col_count = in_size + 1
         validation_errors = []
         test_errors  = []
@@ -555,13 +528,15 @@ def run():
         prev_train_err = np.inf
 
         for i in range(int(500000/train_row_count)):
+            valid_idx = i//5
+
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             if dataset == 'mnist':
                 data_file = load_from_memmap('data' + os.sep + 'mnist_non_station.pkl',train_row_count,col_count,i * train_row_count)
-                valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+                valid_file = load_from_memmap('data' + os.sep + 'mnist_validation_non_station.pkl',valid_row_count,col_count,valid_idx * valid_row_count)
             elif dataset == 'cifar-10':
-                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station.pkl',train_row_count,col_count,i * train_row_count)
-                valid_file = load_from_memmap('data' + os.sep + 'cifar_10_validation_non_station.pkl',valid_row_count,col_count,i * valid_row_count)
+                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_v2.pkl',train_row_count,col_count,i * train_row_count)
+                valid_file = load_from_memmap('data' + os.sep + 'cifar_10_validation_non_station_v2.pkl',valid_row_count,col_count,valid_idx * valid_row_count)
 
             if not modelType == 'MergeInc':
                 v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
@@ -609,7 +584,7 @@ def run():
             v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
 
         valid_logger.info(list(v_err))
-        test_logger.info(list(test_err))
+        test_logger.info(list(test_err),', mean:', np.mean(test_err))
 
 if __name__ == '__main__':
     run()
