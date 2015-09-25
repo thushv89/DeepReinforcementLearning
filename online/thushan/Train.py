@@ -182,7 +182,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
     return v_errors,test_errors
 
 
-def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None, rec_err_logger = None, err_logger = None):
+def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
     t_distribution = []
     v_distribution = []
     start_time = time.clock()
@@ -192,7 +192,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         results_func = model.error_func
 
         if modelType == 'DeepRL':
-            train_adaptive,finetune_adaptive, finetune_valid_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
             get_act_vs_pred_valid_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
@@ -310,8 +310,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         model.set_train_distribution(t_distribution)
                         print('Train batch: ', t_batch, ' Distribution: ', t_dist)
 
-                        empty_slots = train_adaptive(t_batch)
-                        #fine_tune_costs.append(finetune_adaptive(empty_slots))
+                        train_adaptive(t_batch)
 
                         if modelType == 'DeepRL' or modelType=='SAE':
                             act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
@@ -331,8 +330,6 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                 network_size_logger.info(model._network_size_log)
                 model._network_size_log = []
-                rec_err_logger.info(model._reconstruction_log)
-                err_logger.info(model._error_log)
 
             v_errors = []
             test_errors = []
@@ -369,7 +366,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return v_errors,test_errors
 
-def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop=True, network_size_logger = None, rec_err_logger = None, err_logger = None):
+def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop=True, network_size_logger = None):
     start_time = time.clock()
 
     for arc in range(model.arcs):
@@ -390,18 +387,18 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
                 t_costs.append(curr_train_err)
                 print('Train batch: ', t_batch, ' Train cost: ', curr_train_err)
                 # when hard_pool is full ...
-                if ((t_batch+1)*batch_size) % (pool_size*2) == 0:
-                    print('Hard pool is full...')
-                    mean_train_error = np.mean(t_costs)
-                    if mean_train_error > prev_train_err * (1 + (1-improvement_threshold)):
-                        inc = 1 - prev_train_err/mean_train_error
-                    else:
-                        inc = 0.
 
-                    print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
-                    print('Prev TrainErr: ', prev_train_err, ' Mean TrainErr: ', mean_train_error)
-                    prev_train_err = mean_train_error
-                    t_costs = []
+
+                curr_train_error = np.mean(t_costs)
+                if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
+                    inc = 1 - prev_train_err/curr_train_error
+                else:
+                    inc = 0.
+
+                print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
+                print('Prev TrainErr: ', prev_train_err, ' Curr TrainErr: ', curr_train_error)
+                prev_train_err = curr_train_error
+                t_costs = []
 
         v_errors = []
         test_errors = []
@@ -426,7 +423,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
-    return v_errors,test_errors,mean_train_error
+    return v_errors,test_errors,curr_train_error
 
 
 def get_logger(name, folder_path):
@@ -455,11 +452,6 @@ def run():
 
     dataset = 'cifar-10'
     in_size = 3072
-    out_size = 10
-    logger = get_logger('debug','logs')
-
-    dataset = 'mnist'
-    in_size = 784
     out_size = 10
 
     learnMode = 'online'
@@ -549,7 +541,7 @@ def run():
                 valid_file = load_from_memmap('data' + os.sep + 'cifar_10_validation_non_station_v2.pkl',valid_row_count,col_count,valid_idx * valid_row_count)
 
             if not modelType == 'MergeInc':
-                v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
+                v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
             else:
                 v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
 
@@ -558,6 +550,10 @@ def run():
 
             valid_logger.info(list(v_err))
             test_logger.info(list(test_err))
+
+        reconstruction_err_logger.info(model._reconstruction_log)
+        error_logger.info(model._error_log)
+
     else:
 
         prev_train_err = np.inf

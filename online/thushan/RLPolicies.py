@@ -102,6 +102,7 @@ class ContinuousState(Controller):
 
         #action = list(self.Action)[i % len(self.Action)]
         #the first time move() is called
+        #Evenly chosing actions is important because with this algorithm will learn q values for all actions
         if len(gps) == 0 or i <= 50:
             action = list(self.Action)[i % len(self.Action)]
             print('evenly chose:', action)

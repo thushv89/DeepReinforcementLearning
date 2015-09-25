@@ -719,8 +719,6 @@ class MergeIncrementingAutoencoder(Transformer):
                 for i in pool_indexes:
                     combined_objective_tune(i)
 
-            return empty_slots
-
         return merge_model
 
 
@@ -1026,8 +1024,8 @@ class DeepReinforcementLearningModel(Transformer):
             def merge_increment(func, pool, amount, merge, inc):
 
                 nonlocal neuron_balance
-                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-1): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
-                change = 1 + inc - merge + 0.025 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
+                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-2): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
+                change = 1 + inc - merge + 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
                 print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 
@@ -1056,92 +1054,7 @@ class DeepReinforcementLearningModel(Transformer):
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
-            return empty_slots
-
-        # these methods are used for early stopping
-        def finetune_adaptively(empty_slots):
-
-
-            # set up cost function
-            mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
-            mi_updates = []
-
-            # calculating merge_inc updates
-            # increment a subtensor by a certain value
-            for i, nnlayer in enumerate(self._autoencoder.layers):
-                # do the inc_subtensor update only for the first layer
-                # update the rest of the layers normally
-                if i == 0:
-                    # removed ".T" in the T.grad operation. It seems having .T actually
-                    # causes a dimension mismatch
-                    mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
-                                    - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
-                    mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
-                                    - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
-                else:
-                    mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
-                    mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
-
-                mi_updates += [(nnlayer.b_prime, -learning_rate * T.grad(mi_cost,nnlayer.b_prime))]
-
-            softmax_theta = [self.layers[-1].W, self.layers[-1].b]
-
-            mi_updates += [(param, param - learning_rate * grad)
-                           for param, grad in zip(softmax_theta, T.grad(mi_cost, softmax_theta))]
-
-            idx = T.iscalar('idx')
-
-            given = {
-                self._x : self._pool.data[idx*batch_size : (idx+1) * batch_size],
-                self._y : self._pool.data_y[idx*batch_size : (idx+1) * batch_size]
-            }
-
-            mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
-            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
-
-            # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
-            pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
-
-            print('Greedy pre-train ...')
-            for _ in range(self.iterations):
-                for i in pool_indexes:
-                    ae_finetune_func(i)
-
-            if empty_slots:
-                print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
-                for _ in range(self.iterations):
-                    costs = []
-                    for i in pool_indexes:
-                        mi_train(i, empty_slots)
-
-
-            else:
-                print('Fine tuning the whole network with pool indexes: ', pool_indexes)
-                for _ in range(self.iterations):
-                    costs = []
-                    for i in pool_indexes:
-                        costs.append(np.asscalar(combined_objective_tune(i)))
-
-            return np.mean(costs)
-
-        def finetune_validate_adaptively(v_batch_id):
-            update_valid_pool_func = self.build_valid_pool(v_x,v_y,batch_size)
-            update_valid_pool_func(v_batch_id)
-
-            #valid_pool_indexes = self._valid_pool.as_size(int(self._valid_pool.size * 1), self._mi_batch_size)
-            last_rel_pool_idx = self.pool_relevant(self._valid_pool,self.valid_distribution, batch_size, self.train_distribution[-1])-1
-            print('Idx of last relevant pool: ', last_rel_pool_idx, ', pool size: ', self._valid_pool.size)
-            print('Fine tune validation with pool indexes (Relevant):', np.arange(last_rel_pool_idx,self._valid_pool.size//batch_size))
-
-            combined_obj_finetune,combined_obj_valid_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, self._valid_pool.data, self._valid_pool.data_y, batch_size)
-
-            for _ in range(self.iterations):
-                valid_costs = []
-                for i in range(int(last_rel_pool_idx),int(self._valid_pool.size//batch_size)):
-                    valid_costs.append(np.asscalar(combined_obj_valid_func(int(i))))
-            return np.mean(valid_costs)
-
-        return train_adaptively,finetune_adaptively, finetune_validate_adaptively
+        return train_adaptively
 
     def set_train_distribution(self, t_distribution):
         self.train_distribution = t_distribution
