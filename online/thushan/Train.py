@@ -450,8 +450,8 @@ def get_logger(name, folder_path):
 
 def run():
 
-    dataset = 'cifar-10'
-    in_size = 3072
+    dataset = 'mnist'
+    in_size = 784
     out_size = 10
 
     learnMode = 'online'
@@ -482,7 +482,7 @@ def run():
 
     network_size_logger, reconstruction_err_logger, error_logger = None, None, None
 
-    if modelType == 'DeepRL':
+    if modelType == 'DeepRL' or modelType == 'MergeInc':
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset,'logs')
         reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
         error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
@@ -520,6 +520,7 @@ def run():
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
 
+        total_rows = 10000
         train_row_count = batch_size
         valid_row_count = batch_size
 
@@ -527,9 +528,9 @@ def run():
         validation_errors = []
         test_errors  = []
 
-        prev_train_err = np.inf
+        prev_train_err = np.inf #for merge inc function
 
-        for i in range(int(500000/train_row_count)):
+        for i in range(int(total_rows/train_row_count)):
             valid_idx = i//5
 
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
@@ -551,8 +552,12 @@ def run():
             valid_logger.info(list(v_err))
             test_logger.info(list(test_err))
 
-        reconstruction_err_logger.info(model._reconstruction_log)
-        error_logger.info(model._error_log)
+        if modelType == 'DeepRL' or modelType == 'MergeInc':
+            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,total_rows//train_row_count)
+            err_log_arr = np.asarray(model._error_log).reshape(-1,total_rows//train_row_count)
+            for i in range(rec_log_arr.shape[0]):
+                reconstruction_err_logger.info(list(rec_log_arr[i]))
+                error_logger.info(list(err_log_arr[i]))
 
     else:
 
@@ -585,9 +590,9 @@ def run():
             f.close()
 
         if not modelType == 'MergeInc':
-            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
         else:
-            v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger,reconstruction_err_logger,error_logger)
+            v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger)
 
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err),', mean:', np.mean(test_err))

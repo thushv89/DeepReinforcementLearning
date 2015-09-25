@@ -1094,6 +1094,11 @@ class MergeIncDAE(Transformer):
         self.iterations = iterations
         self.lam = lam
 
+        self._error_log = []
+        self._reconstruction_log = []
+        self._neuron_balance_log = []
+        self._network_size_log = []
+
     def process(self, x, y):
         self._x = x
         self._y = y
@@ -1126,11 +1131,16 @@ class MergeIncDAE(Transformer):
 
         def train_mergeinc(batch_id, inc, merge):
 
+            rec_err, rec_err_wo_reg = reconstruction_func(batch_id)
+            self._reconstruction_log.append(np.asscalar(rec_err))
+            self._error_log.append(error_func(batch_id))
+
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
 
             x_hard, y_hard = hard_examples_func(batch_id)
             self._hard_pool.add(x_hard,y_hard)
+
             print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
@@ -1138,6 +1148,9 @@ class MergeIncDAE(Transformer):
                 self._hard_pool.clear()
 
             cost = train_func(batch_id)
+
+            self._network_size_log.append(self.layers[0].W.get_value().shape[1])
+
             return cost
 
         return train_mergeinc
