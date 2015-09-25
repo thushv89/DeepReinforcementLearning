@@ -2,11 +2,12 @@ __author__ = 'Thushan Ganegedara'
 
 import functools
 import itertools
-
 import theano
 import theano.tensor as T
-
 import numpy as np
+import logging
+import os
+from math import ceil
 
 def identity(x):
     return x
@@ -419,6 +420,7 @@ class Pool(object):
     def add_from_shared(self, index, batch_size, x, y):
         self.add(x[index * batch_size:(index+1) * batch_size].eval(), y[index * batch_size:(index+1) * batch_size].eval(), batch_size)
 
+    # this someway returns batch indexes
     def as_size(self, new_size, batch_size):
         batches = new_size // batch_size
         starting_index = self.position // batch_size
@@ -584,7 +586,7 @@ class MergeIncrementingAutoencoder(Transformer):
             self._y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
-        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
+        mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
 
         # the merge is done only for the first hidden layer.
         # apperantly this has been tested against doing this for all layers.
@@ -708,13 +710,16 @@ class MergeIncrementingAutoencoder(Transformer):
                 for i in pool_indexes:
                     finetune(i)
 
+            # finetune with supervised
             if empty_slots:
-                for _ in range(int(self.iterations)):
+                for _ in range(self.iterations):
                     for i in pool_indexes:
                         mi_train(i, empty_slots)
             else:
                 for i in pool_indexes:
                     combined_objective_tune(i)
+
+            return empty_slots
 
         return merge_model
 
@@ -728,6 +733,7 @@ class CombinedObjective(Transformer):
         self._softmax = Softmax(layers,1)
         self.lam = lam
         self.iterations = iterations
+        self.cost = None
 
     def process(self, x, yy):
         self._x = x
@@ -736,12 +742,13 @@ class CombinedObjective(Transformer):
         self._autoencoder.process(x,yy)
         self._softmax.process(x,yy)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations = None, v_x = None, v_y = None):
+        self.cost = self._softmax.cost + self.lam * self._autoencoder.cost
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations=None):
 
         if iterations is None:
             iterations = self.iterations
 
-        combined_cost = self._softmax.cost + self.lam * self._autoencoder.cost
         #combined_cost = self._softmax.cost + self.lam * 0.5
 
         theta = []
@@ -749,8 +756,8 @@ class CombinedObjective(Transformer):
             theta += [layer.W, layer.b, layer.b_prime]
         theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
 
-        update = [(param, param - learning_rate * grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
-        comb_obj_finetune_func = self.make_func(x, y, batch_size, combined_cost, update, transformed_x)
+        update = [(param, param - learning_rate * grad) for param, grad in zip(theta, T.grad(self.cost,wrt=theta))]
+        comb_obj_finetune_func = self.make_func(x, y, batch_size, self.cost, update, transformed_x)
         return iterations_shim(comb_obj_finetune_func, iterations)
 
     def train_with_early_stop_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
@@ -807,7 +814,7 @@ class CombinedObjective(Transformer):
 
 class DeepReinforcementLearningModel(Transformer):
 
-    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller):
+    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, valid_pool_size, controller):
 
         super().__init__(layers, 1, True)
 
@@ -821,19 +828,130 @@ class DeepReinforcementLearningModel(Transformer):
         # _hard_pool: has data points only that are above average reconstruction error
         self._pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
+        self._diff_pool = Pool(layers[0].initial_size[0], pool_size)
 
-        self.distribution = {}
+        self._valid_pool = Pool(layers[0].initial_size[0], valid_pool_size)
+        self._valid_hard_pool = Pool(layers[0].initial_size[0], valid_pool_size)
+
+
+        self.iterations = iterations
+        self.lam = lam
+
+        self.train_distribution = []
+        self.valid_distribution = []
+        self.pool_distribution = []
+
         self._error_log = []
         self._reconstruction_log = []
         self._neuron_balance_log = []
+        self._network_size_log = []
 
     def process(self, x, y):
+        self._x = x
+        self._y = y
         self._autoencoder.process(x, y)
         self._softmax.process(x, y)
         self._merge_increment.process(x, y)
-        #self._sae.process(x, y)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, apply_x=identity):
+    # add_from_shared uses a queue like adding mechanism, which means everything before is deleted
+    # if it run out of space
+    def build_valid_pool(self, v_x, v_y, batch_size, apply_x = identity):
+        hard_examples_valid_func = self._autoencoder.get_hard_examples(0, v_x, v_y, batch_size, apply_x)
+
+        def update_pools(v_batch_id):
+            self._valid_pool.add_from_shared(v_batch_id, batch_size, v_x, v_y)
+            self._valid_hard_pool.add(*hard_examples_valid_func(v_batch_id))
+            print('added batch: ',v_batch_id, ' valid pool size: ',self._valid_pool.size)
+
+        return update_pools
+
+    def pool_if_different(self, pool, pool_dist, batch_id, current, batch_size,x, y):
+        print('Pool if different ...')
+        def magnitude(x):
+            '''  returns sqrt(sum(v(i)^2)) '''
+            return sum((v **2 for v in x.values() )) ** 0.5
+
+        def compare(x,y):
+            '''  Calculate Cosine distance between x and y '''
+            top = 0
+
+            for k in set(x) | set(y):
+                xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
+                top += xval * yval
+
+            return top / magnitude(x) * magnitude(y)
+
+
+        # the below statement get the batch scores, batch scores are basically
+        # the cosine distance between a given batch and the current batch (last)
+        # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+        if len(pool_dist)>0:
+            batch_scores = [(i, compare(current, pool_dist[i])) for i in range(len(pool_dist))]
+            # mean is the mean cosine score
+            #mean = np.mean([ v[1] for v in batch_scores ])
+
+            print('max diff: ', np.max([s[1] for s in batch_scores]))
+            if np.max([s[1] for s in batch_scores]) < 0.45:
+                print('added to pool', batch_id)
+                if len(pool_dist) == pool.max_size/batch_size:
+                    pool_dist.pop(0)
+                pool_dist.append(current)
+                pool.add_from_shared(batch_id, batch_size, x, y)
+        else:
+            print('added to pool', batch_id)
+            pool_dist.append(current)
+            pool.add_from_shared(batch_id, batch_size, x, y)
+
+
+
+
+    # pool_relevent pools all the batches from the current to the last batch that satisfies
+        # cosine_dist(batch) < mean
+    def pool_relevant(self, pool, distribution, batch_size, current=None):
+
+        if current == None:
+            current = distribution[-1]
+
+        def magnitude(x):
+            '''  returns sqrt(sum(v(i)^2)) '''
+            return sum((v **2 for v in x.values() )) ** 0.5
+
+        def compare(x,y):
+            '''  Calculate Cosine distance between x and y '''
+            top = 0
+
+            for k in set(x) | set(y):
+                xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
+                top += xval * yval
+
+            return top / magnitude(x) * magnitude(y)
+
+        # score over batches for this pool
+        # used to get only the distributions of the batches actually in the pool
+        batches_covered = int(pool.size // batch_size)
+
+        # the below statement get the batch scores, batch scores are basically
+        # the cosine distance between a given batch and the current batch (last)
+        # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+        batch_scores = [(i % batches_covered, compare(current, distribution[i])) for i in range(-1,-1 - batches_covered)]
+        # mean is the mean cosine score
+        mean = np.mean([ v[1] for v in batch_scores ])
+
+        # takewhile(predicate, iterable) returns elements until the predicate is true
+        # get all the batches with batch score greater than mean
+        last = [0, 0]
+        for last in itertools.takewhile(lambda s: s[1] > mean, batch_scores):
+            pass
+
+        return 1 - (last[0] / batches_covered)
+
+    def get_batch_count(self, data_y):
+        from collections import Counter
+        dist = Counter(data_y)
+        norm_dist = {str(k): v / sum(dist.values()) for k, v in dist.items()}
+        return norm_dist
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
@@ -847,11 +965,12 @@ class DeepReinforcementLearningModel(Transformer):
         merge_inc_func_batch = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, x, y)
         merge_inc_func_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._pool.data, self._pool.data_y)
         merge_inc_func_hard_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._hard_pool.data, self._hard_pool.data_y)
-        #sae_train_func = self._sae.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         hard_examples_func = self._autoencoder.get_hard_examples(arc, x, y, batch_size, apply_x)
+
         train_func_pool = self._softmax.train_func(arc, learning_rate, self._pool.data, self._pool.data_y, batch_size, apply_x)
         train_func_hard_pool = self._softmax.train_func(arc, learning_rate, self._hard_pool.data, self._hard_pool.data_y, batch_size, apply_x)
+        train_func_diff_pool = self._softmax.train_func(arc, learning_rate, self._diff_pool.data, self._diff_pool.data_y, batch_size, apply_x)
 
         neuron_balance = 1
 
@@ -866,45 +985,10 @@ class DeepReinforcementLearningModel(Transformer):
             weights /= sum(weights)
             return np.convolve(log, weights)[n-1:-n+1]
 
-        # pool_relevent pools all the batches from the current to the last batch that satisfies
-        # cosine_dist(batch) < mean
-        def pool_relevant(pool):
-
-            current = self.distribution[-1]
-
-            def magnitude(x):
-                '''  returns sqrt(sum(v(i)^2)) '''
-                return sum((v **2 for v in x.values() )) ** 0.5
-
-            def compare(x,y):
-                '''  Calculate Cosine distance between x and y '''
-                top = 0
-
-                for k in set(x) | set(y):
-                    xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
-                    top += xval * yval
-
-                return top / magnitude(x) * magnitude(y)
-
-            # score over batches for this pool
-            batches_covered = pool.size // batch_size
-            # the below statement get the batch scores, batch scores are basically
-            # the cosine distance between a given batch and the current batch (last)
-            # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
-            batch_scores = [(i % batches_covered, compare(current, self.distribution[i])) for i in range(-1,-1 - batches_covered)]
-            # mean is the mean cosine score
-            mean = np.mean([ v[1] for v in batch_scores ])
-
-            # takewhile(predicate, iterable) returns elements until the predicate is true
-            # get all the batches with batch score greater than mean
-            last = [0, 0]
-            for last in itertools.takewhile(lambda s: s[1] > mean, batch_scores):
-                pass
-
-            return 1 - (last[0] / batches_covered)
-
+        # get early stopping
         def train_adaptively(batch_id):
 
+            empty_slots = None
             self._error_log.append(np.asscalar(error_func(batch_id)))
             test_rec_results = reconstruction_func(batch_id)
             test_rec_err = np.asscalar(test_rec_results[0])
@@ -917,12 +1001,20 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
+            if self._pool.size > 0:
+                print('Pool Distribution ...')
+                pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
+                for i in pool_indexes:
+                    print(self.get_batch_count(self._pool.data_y[i * batch_size : (i + 1) * batch_size].eval()))
+
+            #self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
+
             data = {
                 'mea_30': moving_average(self._error_log, 30),
                 'mea_15': moving_average(self._error_log, 15),
                 'mea_5': moving_average(self._error_log, 5),
-                'pool_relevant': pool_relevant(self._pool),
-                'initial_size': self.layers[-1].initial_size[0],
+                'pool_relevant': self.pool_relevant(self._pool,self.train_distribution,batch_size),
+                'initial_size': self.layers[1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
                 'error_log': self._error_log,
                 'errors': self._error_log[-1],
@@ -934,11 +1026,15 @@ class DeepReinforcementLearningModel(Transformer):
             def merge_increment(func, pool, amount, merge, inc):
 
                 nonlocal neuron_balance
-                change = 1 + inc - merge
+                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-1): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
+                change = 1 + inc - merge + 0.025 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.)
+                print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 
-                func(pool.as_size(int(pool.size * amount), self._mi_batch_size), merge, inc)
-
+                # pool.as_size(int(pool.size * amount), self._mi_batch_size) seems to provide indexes
+                nonlocal empty_slots
+                empty_slots = func(pool.as_size(int(pool.size * amount), self._mi_batch_size), merge, inc)
+                print('')
             funcs = {
                 'merge_increment_batch' : functools.partial(merge_increment, merge_inc_func_batch, batch_pool),
                 'merge_increment_pool' : functools.partial(merge_increment, merge_inc_func_pool, self._pool),
@@ -949,16 +1045,109 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             #this is where reinforcement learning comes to play
-
             self._controller.move(len(self._error_log), data, funcs)
 
             train_func(batch_id)
 
+            #print('Diff pool size: ',self._diff_pool.size)
+            #if(self._diff_pool.size/batch_size >= 5):
+            #    print('Train with Diff pool ...')
+            #    train_pool(self._diff_pool,train_func_diff_pool,1)
 
-        return train_adaptively
+            self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
-    def set_distribution(self, distribution):
-        self.distribution = distribution
+            return empty_slots
+
+        # these methods are used for early stopping
+        def finetune_adaptively(empty_slots):
+
+
+            # set up cost function
+            mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+            mi_updates = []
+
+            # calculating merge_inc updates
+            # increment a subtensor by a certain value
+            for i, nnlayer in enumerate(self._autoencoder.layers):
+                # do the inc_subtensor update only for the first layer
+                # update the rest of the layers normally
+                if i == 0:
+                    # removed ".T" in the T.grad operation. It seems having .T actually
+                    # causes a dimension mismatch
+                    mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                    - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
+                    mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
+                                    - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
+                else:
+                    mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
+                    mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
+
+                mi_updates += [(nnlayer.b_prime, -learning_rate * T.grad(mi_cost,nnlayer.b_prime))]
+
+            softmax_theta = [self.layers[-1].W, self.layers[-1].b]
+
+            mi_updates += [(param, param - learning_rate * grad)
+                           for param, grad in zip(softmax_theta, T.grad(mi_cost, softmax_theta))]
+
+            idx = T.iscalar('idx')
+
+            given = {
+                self._x : self._pool.data[idx*batch_size : (idx+1) * batch_size],
+                self._y : self._pool.data_y[idx*batch_size : (idx+1) * batch_size]
+            }
+
+            mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
+            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
+
+            # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
+            pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
+
+            print('Greedy pre-train ...')
+            for _ in range(self.iterations):
+                for i in pool_indexes:
+                    ae_finetune_func(i)
+
+            if empty_slots:
+                print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
+                for _ in range(self.iterations):
+                    costs = []
+                    for i in pool_indexes:
+                        mi_train(i, empty_slots)
+
+
+            else:
+                print('Fine tuning the whole network with pool indexes: ', pool_indexes)
+                for _ in range(self.iterations):
+                    costs = []
+                    for i in pool_indexes:
+                        costs.append(np.asscalar(combined_objective_tune(i)))
+
+            return np.mean(costs)
+
+        def finetune_validate_adaptively(v_batch_id):
+            update_valid_pool_func = self.build_valid_pool(v_x,v_y,batch_size)
+            update_valid_pool_func(v_batch_id)
+
+            #valid_pool_indexes = self._valid_pool.as_size(int(self._valid_pool.size * 1), self._mi_batch_size)
+            last_rel_pool_idx = self.pool_relevant(self._valid_pool,self.valid_distribution, batch_size, self.train_distribution[-1])-1
+            print('Idx of last relevant pool: ', last_rel_pool_idx, ', pool size: ', self._valid_pool.size)
+            print('Fine tune validation with pool indexes (Relevant):', np.arange(last_rel_pool_idx,self._valid_pool.size//batch_size))
+
+            combined_obj_finetune,combined_obj_valid_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, self._valid_pool.data, self._valid_pool.data_y, batch_size)
+
+            for _ in range(self.iterations):
+                valid_costs = []
+                for i in range(int(last_rel_pool_idx),int(self._valid_pool.size//batch_size)):
+                    valid_costs.append(np.asscalar(combined_obj_valid_func(int(i))))
+            return np.mean(valid_costs)
+
+        return train_adaptively,finetune_adaptively, finetune_validate_adaptively
+
+    def set_train_distribution(self, t_distribution):
+        self.train_distribution = t_distribution
+
+    def set_valid_distribution(self, v_distribution):
+        self.valid_distribution = v_distribution
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)
@@ -972,3 +1161,123 @@ class DeepReinforcementLearningModel(Transformer):
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
+
+class MergeIncDAE(Transformer):
+
+    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size):
+
+        super().__init__(layers, 1, True)
+        self._mi_batch_size = mi_batch_size
+
+        self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
+        self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam=lam, iterations=iterations)
+
+        # _pool : has all the data points
+        # _hard_pool: has data points only that are above average reconstruction error
+        self._pool = Pool(layers[0].initial_size[0], pool_size*3)
+        self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
+
+        self.iterations = iterations
+        self.lam = lam
+
+    def process(self, x, y):
+        self._x = x
+        self._y = y
+        self._autoencoder.process(x, y)
+        self._softmax.process(x, y)
+        self._merge_increment.process(x, y)
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
+        batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
+        valid_batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
+
+        layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
+        ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+
+        train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
+
+        reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
+        error_func = self.error_func(arc, x, y, batch_size, apply_x)
+
+        merge_inc_func_hard_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._hard_pool.data, self._hard_pool.data_y)
+
+        hard_examples_func = self._autoencoder.get_hard_examples(arc, self._pool.data, self._pool.data_y, batch_size, apply_x)
+
+        def train_pool(pool, pool_func, amount):
+
+            for i in pool.as_size(int(pool.size * amount), batch_size):
+                pool_func(i)
+
+        # these methods are used for early stopping
+        def finetune_mergeinc(empty_slots):
+
+            # set up cost function
+            mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+            mi_updates = []
+
+            # calculating merge_inc updates
+            # increment a subtensor by a certain value
+            for i, nnlayer in enumerate(self._autoencoder.layers):
+                # do the inc_subtensor update only for the first layer
+                # update the rest of the layers normally
+                if i == 0:
+                    # removed ".T" in the T.grad operation. It seems having .T actually
+                    # causes a dimension mismatch
+                    mi_updates += [ (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx],
+                                    - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx])) ]
+                    mi_updates += [ (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx],
+                                    - learning_rate * T.grad(mi_cost,nnlayer.b)[nnlayer.idx])) ]
+                else:
+                    mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
+                    mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
+
+                mi_updates += [(nnlayer.b_prime, -learning_rate * T.grad(mi_cost,nnlayer.b_prime))]
+
+            softmax_theta = [self.layers[-1].W, self.layers[-1].b]
+
+            mi_updates += [(param, param - learning_rate * grad)
+                           for param, grad in zip(softmax_theta, T.grad(mi_cost, softmax_theta))]
+
+            idx = T.iscalar('idx')
+
+            given = {
+                self._x : self._pool.data[idx*batch_size : (idx+1) * batch_size],
+                self._y : self._pool.data_y[idx*batch_size : (idx+1) * batch_size]
+            }
+
+            mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
+            combined_objective_tune = self._softmax.train_func(0, learning_rate, self._pool.data, self._pool.data_y, batch_size)
+
+            # TODO: Add pool_relevant instead of using 1 as amount and use train_distribution as distribution
+            pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
+
+            if empty_slots:
+                print('Fine tuning using mi_train, Empty slots: ', empty_slots, ' with pool indexes: ', pool_indexes)
+                for _ in range(self.iterations):
+                    for i in pool_indexes:
+                        mi_train(i, empty_slots)
+
+        def train_mergeinc(batch_id, inc, merge):
+
+            batch_pool.add_from_shared(batch_id, batch_size, x, y)
+            self._pool.add_from_shared(batch_id, batch_size, x, y)
+
+            x_hard, y_hard = hard_examples_func(batch_id)
+            self._hard_pool.add(x_hard,y_hard)
+            print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
+            if self._hard_pool.size >= self._hard_pool.max_size:
+                pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
+                empty_slots = merge_inc_func_hard_pool(pool_indexes, merge, inc)
+                finetune_mergeinc(empty_slots)
+                self._hard_pool.clear()
+
+            cost = train_func(batch_id)
+            return cost
+
+        return train_mergeinc
+    def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
+        return self._softmax.validate_func(arc, x, y,batch_size)
+
+    def error_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.error_func(arc, x, y, batch_size)

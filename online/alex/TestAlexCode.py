@@ -8,6 +8,7 @@ from theano import config
 import theano
 import theano.tensor as T
 import math
+import time
 
 class DiscreteRL(object):
     ''' Q learning model '''
@@ -86,8 +87,6 @@ if __name__ == '__main__':
 
     y_new_mat = y_mat.get_value()
 
-    new_arr = [1,2,3,4,5]
+    batch_scores = [(i, i+5) for i in range(5,10)]
+    print(np.min([s[1] for s in batch_scores]))
 
-    for i,val in enumerate(new_arr):
-        print(i)
-    print('')
