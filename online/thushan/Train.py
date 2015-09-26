@@ -366,7 +366,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return v_errors,test_errors
 
-def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop=True, network_size_logger = None):
+def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, early_stop=True, network_size_logger = None):
     start_time = time.clock()
 
     for arc in range(model.arcs):
@@ -377,8 +377,6 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
         validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
 
-
-        inc = 0.0
         improvement_threshold = 0.995
         for epoch in range(fine_epochs):
             t_costs = []
@@ -424,7 +422,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
-    return v_errors,test_errors,curr_train_error
+    return v_errors,test_errors,curr_train_error,inc
 
 
 def get_logger(name, folder_path):
@@ -530,7 +528,7 @@ def run():
         test_errors  = []
 
         prev_train_err = np.inf #for merge inc function
-
+        inc = 0.
         for i in range(int(total_rows/train_row_count)):
             valid_idx = i//5
 
@@ -545,7 +543,7 @@ def run():
             if not modelType == 'MergeInc':
                 v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
             else:
-                v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger)
+                v_err,test_err,prev_train_err,inc = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, early_stop, network_size_logger)
 
             validation_errors.append(v_err)
             test_errors.append(test_err)
@@ -563,6 +561,8 @@ def run():
     else:
 
         prev_train_err = np.inf
+        inc = 0.
+
         if dataset == 'mnist':
             data_file, valid_file, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
         elif dataset == 'cifar-10':
@@ -593,7 +593,7 @@ def run():
         if not modelType == 'MergeInc':
             v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
         else:
-            v_err,test_err,prev_train_err = train_validate_mergeinc(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, early_stop, network_size_logger)
+            v_err,test_err,prev_train_err,inc = train_validate_mergeinc(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, early_stop, network_size_logger)
 
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err),', mean:', np.mean(test_err))
