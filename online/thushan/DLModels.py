@@ -1025,7 +1025,7 @@ class DeepReinforcementLearningModel(Transformer):
 
                 nonlocal neuron_balance
                 print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-2): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
-                change = 1 + inc - merge + 0.1 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-1.5)
+                change = 1 + inc - merge + 0.1 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.0)
                 print('neuron balance', neuron_balance, '=>', neuron_balance * change)
                 neuron_balance *= change
 
@@ -1099,6 +1099,9 @@ class MergeIncDAE(Transformer):
         self._neuron_balance_log = []
         self._network_size_log = []
 
+        self.total_inc = 0.
+        self.total_merge = 0.
+
     def process(self, x, y):
         self._x = x
         self._y = y
@@ -1131,6 +1134,10 @@ class MergeIncDAE(Transformer):
 
         def train_mergeinc(batch_id, inc, merge):
 
+            self.total_inc += inc
+            self.total_merge += merge
+            print('Total inc: ', self.total_inc, ' Total merge: ', self.total_merge)
+
             rec_err, rec_err_wo_reg = reconstruction_func(batch_id)
             self._reconstruction_log.append(np.asscalar(rec_err))
             self._error_log.append(error_func(batch_id))
@@ -1144,7 +1151,10 @@ class MergeIncDAE(Transformer):
             print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
-                merge_inc_func_hard_pool(pool_indexes, merge, inc)
+
+                merge_inc_func_hard_pool(pool_indexes, self.total_merge, self.total_inc)
+                self.total_merge = 0.
+                self.total_inc = 0.
                 self._hard_pool.clear()
 
             cost = train_func(batch_id)

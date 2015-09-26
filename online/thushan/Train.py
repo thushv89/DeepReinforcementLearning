@@ -378,7 +378,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
 
 
-        inc = 0.1
+        inc = 0.0
         improvement_threshold = 0.995
         for epoch in range(fine_epochs):
             t_costs = []
@@ -390,7 +390,8 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
 
                 curr_train_error = np.mean(t_costs)
-                if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
+                #if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
+                if curr_train_error > prev_train_err:
                     inc = 1 - prev_train_err/curr_train_error
                 else:
                     inc = 0.
@@ -520,7 +521,7 @@ def run():
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
 
-        total_rows = 10000
+        total_rows = 500000
         train_row_count = batch_size
         valid_row_count = batch_size
 
