@@ -381,16 +381,19 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
         for epoch in range(fine_epochs):
             t_costs = []
             for t_batch in range(math.ceil(data_file[2] / batch_size)):
-                curr_train_err = train_mergeinc(t_batch, inc, inc*.5)
+                curr_train_err = train_mergeinc(t_batch, inc, inc*.25)
                 t_costs.append(curr_train_err)
                 print('Train batch: ', t_batch, ' Train cost: ', curr_train_err)
                 # when hard_pool is full ...
 
+                if (not t_costs) or len(t_costs)==0:
+                    pass
 
                 curr_train_error = np.mean(t_costs)
+
                 #if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
                 if curr_train_error > prev_train_err:
-                    inc = 1 - prev_train_err/curr_train_error
+                    inc = 10.*(1. - (prev_train_err/curr_train_error))
                 else:
                     inc = 0.
 
@@ -401,12 +404,12 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
         v_errors = []
         test_errors = []
-        print('\nValidation phase ...\n')
+        print('\nValidation phase ...')
         for v_batch in range(math.ceil(valid_file[2] / batch_size)):
             validate_results = validate_func(v_batch)
             v_errors.append(np.asscalar(validate_results))
 
-        print('\nTesting phase ...\n')
+        print('Testing phase ...\n')
         for test_batch in range(math.ceil(test_file[2] / batch_size)):
             test_results = test_func(test_batch)
             test_errors.append(np.asscalar(test_results))
@@ -449,8 +452,8 @@ def get_logger(name, folder_path):
 
 def run():
 
-    dataset = 'mnist'
-    in_size = 784
+    dataset = 'cifar-10'
+    in_size = 3072
     out_size = 10
 
     learnMode = 'online'
@@ -490,6 +493,7 @@ def run():
 
 
     model_info = '---------- Model Information -------------\n'
+    model_info += 'Dataset: ' + dataset + '\n'
     model_info += 'Learning Mode: ' + learnMode + '\n'
     model_info += 'Model type: ' + modelType + '\n'
     model_info += 'Batch size: ' + str(batch_size) + '\n'

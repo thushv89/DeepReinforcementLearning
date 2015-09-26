@@ -844,6 +844,8 @@ class DeepReinforcementLearningModel(Transformer):
         self._neuron_balance_log = []
         self._network_size_log = []
 
+        self.neuron_balance = 1
+
     def process(self, x, y):
         self._x = x
         self._y = y
@@ -970,8 +972,6 @@ class DeepReinforcementLearningModel(Transformer):
         train_func_hard_pool = self._softmax.train_func(arc, learning_rate, self._hard_pool.data, self._hard_pool.data_y, batch_size, apply_x)
         train_func_diff_pool = self._softmax.train_func(arc, learning_rate, self._diff_pool.data, self._diff_pool.data_y, batch_size, apply_x)
 
-        neuron_balance = 1
-
         def train_pool(pool, pool_func, amount):
 
             for i in pool.as_size(int(pool.size * amount), batch_size):
@@ -993,8 +993,8 @@ class DeepReinforcementLearningModel(Transformer):
             test_rec_before_reg = test_rec_results[1]
             print('Reconstruction Error (with reg): ',test_rec_err, ' (w/o reg: ', test_rec_before_reg, ') batch id: ', batch_id)
             self._reconstruction_log.append(test_rec_err)
-            self._neuron_balance_log.append(neuron_balance)
-
+            self._neuron_balance_log.append(self.neuron_balance)
+            print('Neuron balance log: ', self._neuron_balance_log)
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
@@ -1023,11 +1023,14 @@ class DeepReinforcementLearningModel(Transformer):
 
             def merge_increment(func, pool, amount, merge, inc):
 
-                nonlocal neuron_balance
-                print('init size: ', self.layers[1].initial_size[0], ' curr size: ', self.layers[1].W.get_value().shape[0], ' (ratio-2): ', (self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
-                change = 1 + inc - merge + 0.1 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.0)
-                print('neuron balance', neuron_balance, '=>', neuron_balance * change)
-                neuron_balance *= change
+                #nonlocal neuron_balance
+                if inc > 0. or merge > 0.:
+                    change = 1 + inc - merge + 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
+                else:
+                    change = 1 + inc - merge
+
+                print('neuron balance', self.neuron_balance, '=>', self.neuron_balance * change)
+                self.neuron_balance *= change
 
                 # pool.as_size(int(pool.size * amount), self._mi_batch_size) seems to provide indexes
                 nonlocal empty_slots
@@ -1090,6 +1093,8 @@ class MergeIncDAE(Transformer):
         # _hard_pool: has data points only that are above average reconstruction error
         self._pool = Pool(layers[0].initial_size[0], pool_size*3)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
+        self._pre_train_pool = Pool(layers[0].initial_size[0], 12000)
+        self._pre_train_done = False
 
         self.iterations = iterations
         self.lam = lam
@@ -1111,12 +1116,12 @@ class MergeIncDAE(Transformer):
 
     def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
-        valid_batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
-        layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
+        layer_greedy = [ ae.train_func(arc, learning_rate, self._pre_train_pool.data,  self._pre_train_pool.data_y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
         ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
 
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
+        train_func_pre_train = self._softmax.train_func(arc, learning_rate, self._pre_train_pool.data,  self._pre_train_pool.data_y, batch_size, apply_x)
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
@@ -1129,8 +1134,6 @@ class MergeIncDAE(Transformer):
 
             for i in pool.as_size(int(pool.size * amount), batch_size):
                 pool_func(i)
-
-
 
         def train_mergeinc(batch_id, inc, merge):
 
@@ -1145,6 +1148,26 @@ class MergeIncDAE(Transformer):
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
 
+            if self._pre_train_pool.size < self._pre_train_pool.max_size and not self._pre_train_done:
+                print('Adding batch to pre-training pool')
+                self._pre_train_pool.add_from_shared(batch_id, batch_size, x, y)
+                return list()
+            elif self._pre_train_pool.size == self._pre_train_pool.max_size and not self._pre_train_done:
+                print('Pre training ...')
+                pre_train_pool_indexes = self._pre_train_pool.as_size(int(self._pre_train_pool.size * 1), batch_size)
+                for pool_idx in pre_train_pool_indexes:
+                    print('\tPre training pool ', pool_idx)
+                    for _ in range(int(self.iterations)):
+                        for i in range(len(self.layers)-1):
+                            layer_greedy[i](int(pool_idx))
+                print('Fine tuning ...')
+                for pool_idx in pre_train_pool_indexes:
+                    print('\tFine tuning using pool ', pool_idx)
+                    train_func_pre_train(pool_idx)
+                print('Pre training finished')
+                self._pre_train_done = True
+                return list()
+
             x_hard, y_hard = hard_examples_func(batch_id)
             self._hard_pool.add(x_hard,y_hard)
 
@@ -1156,6 +1179,9 @@ class MergeIncDAE(Transformer):
                 self.total_merge = 0.
                 self.total_inc = 0.
                 self._hard_pool.clear()
+
+            for _ in range(int(self.iterations)):
+                ae_finetune_func(batch_id)
 
             cost = train_func(batch_id)
 
