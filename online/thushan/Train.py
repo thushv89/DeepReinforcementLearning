@@ -479,15 +479,20 @@ def run():
     pre_epochs = 5
     finetune_epochs = 1
 
-    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset,'logs')
-    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+    layers_str = str(in_size) + ', '
+    for s in hid_sizes:
+        layers_str += str(s) + ', '
+    layers_str += str(out_size)
+
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
 
     network_size_logger, reconstruction_err_logger, error_logger = None, None, None
 
     if modelType == 'DeepRL' or modelType == 'MergeInc':
-        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset,'logs')
-        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
-        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset,'logs')
+        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
+        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
+        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
     input_layer_size = model.layers[0].initial_size[0]
 
@@ -499,10 +504,6 @@ def run():
     model_info += 'Batch size: ' + str(batch_size) + '\n'
     model_info += 'Epochs: ' + str(epochs) + '\n'
 
-    layers_str = str(in_size) + ', '
-    for s in hid_sizes:
-        layers_str += str(s) + ', '
-    layers_str += str(out_size)
     model_info += 'Network Configuration: ' + layers_str + '\n'
     model_info += 'Iterations: ' + str(iterations) + '\n'
     model_info += 'Lambda Regularizing Coefficient: ' + str(lam) + '\n'
