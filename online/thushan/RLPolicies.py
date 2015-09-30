@@ -77,13 +77,15 @@ class ContinuousState(Controller):
 
         if self.prev_state or self.prev_action:
 
-            reward = - data['error_log'][-1]
+            #reward = - data['error_log'][-1]
+            err_diff = data['error_log'][-1] - data['error_log'][-2]
+            reward = (1 - err_diff)*(1-data['error_log'][-1])
 
             neuron_penalty = 0
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
-                neuron_penalty = 2. * abs(1 - data['neuron_balance'])
+                neuron_penalty = 2. * abs(1.5 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
@@ -118,7 +120,11 @@ class ContinuousState(Controller):
             for a, gp in gps.items():
                 print(a, np.asscalar(gp.predict(state)[0]))
 
-        to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
+        #to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
+        err_diff = data['error_log'][-1] - data['error_log'][-2]
+        to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff)
+        print('To move: ', to_move)
+
         if action == self.Action.pool:
             funcs['pool'](1)
         elif action == self.Action.reduce:

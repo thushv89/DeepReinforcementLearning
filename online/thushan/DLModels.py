@@ -715,9 +715,9 @@ class MergeIncrementingAutoencoder(Transformer):
                 for _ in range(self.iterations):
                     for i in pool_indexes:
                         mi_train(i, empty_slots)
-            else:
-                for i in pool_indexes:
-                    combined_objective_tune(i)
+
+            for i in pool_indexes:
+                combined_objective_tune(i)
 
         return merge_model
 
@@ -872,7 +872,7 @@ class DeepReinforcementLearningModel(Transformer):
             return sum((v **2 for v in x.values() )) ** 0.5
 
         def compare(x,y):
-            '''  Calculate Cosine distance between x and y '''
+            '''  Calculate Cosine similarity between x and y '''
             top = 0
 
             for k in set(x) | set(y):
@@ -889,8 +889,8 @@ class DeepReinforcementLearningModel(Transformer):
             batch_scores = [(i, compare(current, pool_dist[i])) for i in range(len(pool_dist))]
             # mean is the mean cosine score
             #mean = np.mean([ v[1] for v in batch_scores ])
-
-            print('max diff: ', np.max([s[1] for s in batch_scores]))
+            print(batch_scores)
+            print('max simi: ', np.max([s[1] for s in batch_scores]))
             if np.max([s[1] for s in batch_scores]) < 0.45:
                 print('added to pool', batch_id)
                 if len(pool_dist) == pool.max_size/batch_size:
@@ -954,9 +954,6 @@ class DeepReinforcementLearningModel(Transformer):
     def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
-        layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
-        ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
-
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
@@ -986,7 +983,7 @@ class DeepReinforcementLearningModel(Transformer):
         # get early stopping
         def train_adaptively(batch_id):
 
-            empty_slots = None
+
             self._error_log.append(np.asscalar(error_func(batch_id)))
             test_rec_results = reconstruction_func(batch_id)
             test_rec_err = np.asscalar(test_rec_results[0])
@@ -1005,7 +1002,7 @@ class DeepReinforcementLearningModel(Transformer):
                 for i in pool_indexes:
                     print(self.get_batch_count(self._pool.data_y[i * batch_size : (i + 1) * batch_size].eval()))
 
-            #self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
+            self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
@@ -1024,18 +1021,16 @@ class DeepReinforcementLearningModel(Transformer):
             def merge_increment(func, pool, amount, merge, inc):
 
                 #nonlocal neuron_balance
-                if inc > 0. or merge > 0.:
-                    change = 1 + inc - merge + 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
-                else:
-                    change = 1 + inc - merge
+                change = 1 + inc - merge #+ 0.05 * ((self.layers[1].W.get_value().shape[0]/self.layers[1].initial_size[0])-2.)
+
 
                 print('neuron balance', self.neuron_balance, '=>', self.neuron_balance * change)
                 self.neuron_balance *= change
 
                 # pool.as_size(int(pool.size * amount), self._mi_batch_size) seems to provide indexes
-                nonlocal empty_slots
-                empty_slots = func(pool.as_size(int(pool.size * amount), self._mi_batch_size), merge, inc)
-                print('')
+
+                func(pool.as_size(int(pool.size * amount), self._mi_batch_size), merge, inc)
+
             funcs = {
                 'merge_increment_batch' : functools.partial(merge_increment, merge_inc_func_batch, batch_pool),
                 'merge_increment_pool' : functools.partial(merge_increment, merge_inc_func_pool, self._pool),

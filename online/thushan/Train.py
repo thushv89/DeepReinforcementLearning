@@ -245,9 +245,9 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         fine_tune_costs.append(cost)
 
 
-                        act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
-                        print('Actual: ', act_vs_pred_train[0])
-                        print('Predicted: ', act_vs_pred_train[1])
+                        #act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
+                        #print('Actual: ', act_vs_pred_train[0])
+                        #print('Predicted: ', act_vs_pred_train[1])
 
                         #what's the role of iter? iter acts as follows
                         #in first epoch, iter for minibatch 'x' is x
@@ -312,10 +312,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                         train_adaptive(t_batch)
 
-                        if modelType == 'DeepRL' or modelType=='SAE':
-                            act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
-                            print('Actual: ', act_vs_pred_train[0])
-                            print('Predicted: ', act_vs_pred_train[1])
+                        #if modelType == 'DeepRL' or modelType=='SAE':
+                            #act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
+                            #print('Actual: ', act_vs_pred_train[0])
+                            #print('Predicted: ', act_vs_pred_train[1])
 
                         train_batch_stop_time = time.clock()
                         print('\nTime for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
@@ -393,7 +393,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
                 #if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
                 if curr_train_error > prev_train_err:
-                    inc = 10.*(1. - (prev_train_err/curr_train_error))
+                    inc = 1. - (prev_train_err/curr_train_error)
                 else:
                     inc = 0.
 
@@ -457,7 +457,7 @@ def run():
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'MergeInc'
+    modelType = 'DeepRL'
 
 
     learning_rate = 0.25
