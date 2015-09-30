@@ -79,13 +79,15 @@ class ContinuousState(Controller):
 
             #reward = - data['error_log'][-1]
             err_diff = data['error_log'][-1] - data['error_log'][-2]
+            print('Err log 1: ',data['error_log'][-1])
+            print('Err log 2: ',data['error_log'][-2])
             reward = (1 - err_diff)*(1-data['error_log'][-1])
-
+            print('Reward: ', reward)
             neuron_penalty = 0
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
-                neuron_penalty = 2. * abs(1.5 - data['neuron_balance'])
+                neuron_penalty = 1. * abs(1.5 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
