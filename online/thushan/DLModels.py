@@ -994,7 +994,7 @@ class DeepReinforcementLearningModel(Transformer):
             print('Reconstruction Error (with reg): ',test_rec_err, ' (w/o reg: ', test_rec_before_reg, ') batch id: ', batch_id)
             self._reconstruction_log.append(test_rec_err)
             self._neuron_balance_log.append(self.neuron_balance)
-            
+
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
@@ -1162,7 +1162,7 @@ class MergeIncDAE(Transformer):
                     train_func_pre_train(pool_idx)
                 print('Pre training finished')
                 self._pre_train_done = True
-                return list()
+                return self._error_log[-1]
 
             x_hard, y_hard = hard_examples_func(batch_id)
             self._hard_pool.add(x_hard,y_hard)

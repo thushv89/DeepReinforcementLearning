@@ -324,7 +324,6 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
         train_mergeinc = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, None, None)
 
         results_func = model.error_func
-        validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
 
         improvement_threshold = 0.995
@@ -394,7 +393,7 @@ def run():
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'SAE'
+    modelType = 'MergeInc'
 
 
     learning_rate = 0.25
@@ -416,6 +415,9 @@ def run():
     pre_epochs = 5
     finetune_epochs = 1
 
+    online_total_rows = 1000000
+    online_train_row_count = batch_size
+
     layers_str = str(in_size) + ', '
     for s in hid_sizes:
         layers_str += str(s) + ', '
@@ -436,6 +438,8 @@ def run():
     model_info = '---------- Model Information -------------\n'
     model_info += 'Dataset: ' + dataset + '\n'
     model_info += 'Learning Mode: ' + learnMode + '\n'
+    if learnMode == 'online':
+        model_info += 'Total Examples: ' + str(online_total_rows) + '\n'
     model_info += 'Model type: ' + modelType + '\n'
     model_info += 'Batch size: ' + str(batch_size) + '\n'
     model_info += 'Epochs: ' + str(epochs) + '\n'
@@ -464,26 +468,23 @@ def run():
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('fine_labels'), dtype=np.float32), 'test', True, 255.0)
 
-        total_rows = 500000
-        train_row_count = batch_size
-
         col_count = in_size + 1
         validation_errors = []
         test_errors  = []
 
         prev_train_err = np.inf #for merge inc function
         inc = 0.
-        for i in range(int(total_rows/train_row_count)):
+        for i in range(int(online_total_rows/online_train_row_count)):
 
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             if dataset == 'mnist':
-                data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
+                data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
             elif dataset == 'cifar-10':
-                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
+                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
             elif dataset == 'cifar-100':
-                data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
+                data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
 
             if not modelType == 'MergeInc':
@@ -502,8 +503,8 @@ def run():
             test_logger.info(list(test_err))
 
         if modelType == 'DeepRL' or modelType == 'MergeInc':
-            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,total_rows//train_row_count)
-            err_log_arr = np.asarray(model._error_log).reshape(-1,total_rows//train_row_count)
+            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,online_total_rows//online_train_row_count)
+            err_log_arr = np.asarray(model._error_log).reshape(-1,online_total_rows//online_train_row_count)
             for i in range(rec_log_arr.shape[0]):
                 reconstruction_err_logger.info(list(rec_log_arr[i]))
                 error_logger.info(list(err_log_arr[i]))
