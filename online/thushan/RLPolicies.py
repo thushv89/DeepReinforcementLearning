@@ -87,7 +87,7 @@ class ContinuousState(Controller):
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
-                neuron_penalty = 1. * abs(1.5 - data['neuron_balance'])
+                neuron_penalty = 1.5 * abs(1.5 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
@@ -131,7 +131,8 @@ class ContinuousState(Controller):
             funcs['pool'](1)
         elif action == self.Action.reduce:
             # method signature: amount, to_merge, to_inc
-            funcs['merge_increment_pool'](data['pool_relevant'], to_move, 0)
+            # introducing division by two to reduce the impact
+            funcs['merge_increment_pool'](data['pool_relevant'], to_move/2., 0)
         elif action == self.Action.increment:
             funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)
 

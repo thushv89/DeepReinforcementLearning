@@ -177,6 +177,7 @@ def create_image_from_vector(vec, dataset):
 
 if __name__ == '__main__':
     #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
+
     file_name = 'cifar_100_non_station_1000000'
     elements = 1000000
     granularity = 100
@@ -184,4 +185,5 @@ if __name__ == '__main__':
     seed = 12
     main('cifar_100',file_name, elements, granularity,effects,seed)
     #retrive_data(file_name,3073, 'cifar_10')
+
     print('done...')
