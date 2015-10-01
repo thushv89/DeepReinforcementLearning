@@ -1051,6 +1051,7 @@ class DeepReinforcementLearningModel(Transformer):
             #    train_pool(self._diff_pool,train_func_diff_pool,1)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
+            return self._error_log[-1]
 
         return train_adaptively
 
@@ -1182,7 +1183,7 @@ class MergeIncDAE(Transformer):
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
-            return cost
+            return self._error_log[-1]
 
         return train_mergeinc
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):

@@ -27,27 +27,57 @@ def distribute_as(dist, n):
 
 def cifar_10_load():
 
-    train_names = ['cifar_10_data_batch_1','cifar_10_data_batch_2','cifar_10_data_batch_3','cifar_10_data_batch_4']
+    train_names = ['cifar_10_data_batch_1','cifar_10_data_batch_2','cifar_10_data_batch_3','cifar_10_data_batch_4','cifar_10_data_batch_5']
     valid_name = 'cifar_10_data_batch_5'
     test_name = 'cifar_10_test_batch'
 
     train_x = []
     train_y = []
     for file_path in train_names:
-        f = open('Data' + os.sep +file_path, 'rb')
+        f = open('data' + os.sep +file_path, 'rb')
         dict = pickle.load(f,encoding='latin1')
         train_x.extend(dict.get('data')/255.)
         train_y.extend(dict.get('labels'))
 
     train_set = [train_x,train_y]
 
-    f = open('Data' + os.sep +valid_name, 'rb')
+    f = open('data' + os.sep +valid_name, 'rb')
     dict = pickle.load(f,encoding='latin1')
     valid_set = [dict.get('data')/255.,dict.get('labels')]
 
-    f = open('Data' + os.sep +test_name, 'rb')
+    f = open('data' + os.sep +test_name, 'rb')
     dict = pickle.load(f,encoding='latin1')
     test_set = [dict.get('data')/255.,dict.get('labels')]
+
+    f.close()
+
+    all_data = [(np.asarray(train_x),np.asarray(train_y)),(valid_set[0],valid_set[1]),(test_set[0],test_set[1])]
+
+    return all_data
+
+def cifar_100_load():
+
+    train_names = ['cifar_100_train']
+    valid_name = 'cifar_100_train'
+    test_name = 'cifar_100_test'
+
+    train_x = []
+    train_y = []
+    for file_path in train_names:
+        f = open('data' + os.sep +file_path, 'rb')
+        dict = pickle.load(f,encoding='latin1')
+        train_x.extend(dict.get('data')/255.)
+        train_y.extend(dict.get('fine_labels'))
+
+    train_set = [train_x,train_y]
+
+    f = open('data' + os.sep +valid_name, 'rb')
+    dict = pickle.load(f,encoding='latin1')
+    valid_set = [dict.get('data')/255.,dict.get('fine_labels')]
+
+    f = open('data' + os.sep +test_name, 'rb')
+    dict = pickle.load(f,encoding='latin1')
+    test_set = [dict.get('data')/255.,dict.get('fine_labels')]
 
     f.close()
 
@@ -69,6 +99,9 @@ def main(dataset='mnist',file_name=None, elements=100000, granularity = 20, effe
     elif dataset == 'cifar_10':
         col_count =3072 + 1
         train, valid, _ = cifar_10_load()
+    elif dataset == 'cifar_100':
+        col_count =3072 + 1
+        train, valid, _ = cifar_100_load()
 
     np.random.seed(seed)
     random.seed(seed)
@@ -144,11 +177,11 @@ def create_image_from_vector(vec, dataset):
 
 if __name__ == '__main__':
     #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
-    file_name = 'cifar_10_non_station'
-    elements = 500000
+    file_name = 'cifar_100_non_station_1000000'
+    elements = 1000000
     granularity = 100
     effects = 'noise'
     seed = 12
-    #main('cifar_10',file_name, elements, granularity,effects,seed)
-    retrive_data(file_name,3073, 'cifar_10')
+    main('cifar_100',file_name, elements, granularity,effects,seed)
+    #retrive_data(file_name,3073, 'cifar_10')
     print('done...')
