@@ -191,11 +191,11 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         results_func = model.error_func
 
         if modelType == 'DeepRL':
-            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, valid_file[0],valid_file[1])
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
         elif modelType == 'SAE':
-            pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
+            pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, valid_file[0],valid_file[1])
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
 
@@ -206,11 +206,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         print('training data ...')
         try:
             if modelType == 'SAE':
+                print('Pre-training Epoch %d ...')
                 for epoch in range(pre_epochs):
-                    print('Training Epoch %d ...' % epoch)
                     for t_batch in range(math.ceil(data_file[2] / batch_size)):
-                        t_cost = pretrain_func(t_batch)
-                        print('training epoch %d and batch %d and cost %f' % (epoch, t_batch,t_cost))
+                        pretrain_func(t_batch)
 
             if modelType == 'SAE' and early_stop:
                 #########################################################################
@@ -234,23 +233,10 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                     f_epoch += 1
                     fine_tune_costs = []
                     for t_batch in range(n_train_batches):
-                        from collections import Counter
-
-                        t_dist = Counter(data_file[1][t_batch * batch_size: (t_batch + 1) * batch_size].eval())
-                        print('Train batch: ', t_batch, ' Distribution: ', t_dist)
 
                         cost = finetune_func(t_batch)
                         fine_tune_costs.append(cost)
 
-
-                        #act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
-                        #print('Actual: ', act_vs_pred_train[0])
-                        #print('Predicted: ', act_vs_pred_train[1])
-
-                        #what's the role of iter? iter acts as follows
-                        #in first epoch, iter for minibatch 'x' is x
-                        #in second epoch, iter for minibatch 'x' is n_train_batches + x
-                        #iter is the number of minibatches processed so far...
                         f_iter = (f_epoch-1) * n_train_batches + t_batch
 
                         # this is an operation done in cycles. 1 cycle is iter+1/validation_freq
@@ -283,9 +269,11 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
                         print('Early stopping at iter: ', f_iter)
                         done_looping = True
                         break
+
             elif modelType=='SAE' and not early_stop:
-                for f_epoch in range(fine_epochs):
-                    finetune_func(t_batch)
+                print('Fine tuning ...')
+                for t_batch in range(math.ceil(data_file[2] / batch_size)):
+                    v_errors.append(finetune_func(t_batch))
 
             elif modelType == 'DeepRL':
 
@@ -305,11 +293,6 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
 
                         v_errors.append(train_adaptive(t_batch))
 
-                        #if modelType == 'DeepRL' or modelType=='SAE':
-                            #act_vs_pred_train = get_act_vs_pred_train_func(t_batch)
-                            #print('Actual: ', act_vs_pred_train[0])
-                            #print('Predicted: ', act_vs_pred_train[1])
-
                         train_batch_stop_time = time.clock()
                         print('\nTime for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
 
@@ -323,15 +306,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
             for test_batch in range(math.ceil(test_file[2] / batch_size)):
                 test_results = test_func(test_batch)
                 test_errors.append(np.asscalar(test_results))
-                #if modelType == 'DeepRL' or modelType=='SAE':
-                    #act_vs_pred_test = get_act_vs_pred_test_func(test_batch)
-                    #print('Actual: ', act_vs_pred_test[0])
-                    #print('Predicted: ', act_vs_pred_test[1])
 
-            for i, t_err in enumerate(test_errors):
-                print('batch ',i, ": ", t_err, end=', ')
-            print()
-            print('Mean Test Error: ', np.mean(test_errors),'\n')
 
         except StopIteration:
             pass
@@ -419,7 +394,7 @@ def run():
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'DeepRL'
+    modelType = 'SAE'
 
 
     learning_rate = 0.25
@@ -435,7 +410,7 @@ def run():
     pool_size = 10000
 
     valid_pool_size = pool_size//2
-    early_stop = True
+    early_stop = False
 
 
     pre_epochs = 5

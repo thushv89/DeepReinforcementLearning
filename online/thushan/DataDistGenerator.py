@@ -8,7 +8,7 @@ import math
 import numpy as np
 import os
 from collections import defaultdict
-import logging
+import csv
 
 def distribute_as(dist, n):
     cumsum = np.cumsum(dist)
@@ -85,22 +85,19 @@ def cifar_100_load():
 
     return all_data
 
-def main(dataset='mnist',file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12):
+def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12):
 
     # seed the generator (Random num generators use pseudo-random sequences)
     # seed determines the starting position in that sequence for the random numbers
     # therefore, using same seed make sure you endup with same rand sequence
 
     if dataset == 'mnist':
-        col_count =785
         pickle_file = 'data' + os.sep + 'mnist.pkl'
         with open(pickle_file, 'rb') as f:
             train, valid, _ = pickle.load(f, encoding='latin1')
     elif dataset == 'cifar_10':
-        col_count =3072 + 1
         train, valid, _ = cifar_10_load()
     elif dataset == 'cifar_100':
-        col_count =3072 + 1
         train, valid, _ = cifar_100_load()
 
     np.random.seed(seed)
@@ -152,6 +149,37 @@ def main(dataset='mnist',file_name=None, elements=100000, granularity = 20, effe
 
     print('finished writing data ...')
 
+def write_data_distribution(filename, col_count, row_count, row_total, label_count, dataset):
+    print('retrieving data ...')
+    filename = 'data'+os.sep+file_name +'.pkl'
+    distribution = []
+    from collections import Counter
+
+    for i in range(row_total//row_count):
+        print('dist retrieved for ', i)
+        newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*i*row_count,shape=(row_count,col_count))
+        data_new = np.empty((row_count,col_count),dtype=np.float32)
+        data_new[:] = newfp[:]
+        arr = data_new[:,-1]
+        dist = Counter(arr)
+        #for k,v in dist.items():
+        #    distribution[str(k)] = distribution[str(k)] + v / sum(dist.values()) \
+        #        if str(k) in distribution else v / sum(dist.values())
+        distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
+
+    ordered_dist = []
+    for val in range(label_count):
+        k = str(float(val))
+        ordered_dist_i = []
+        for dist_i in distribution:
+            ordered_dist_i.append(dist_i[str(k)] if str(k) in dist_i else 0)
+        ordered_dist.append(ordered_dist_i)
+
+    with open('label_dist.csv', 'w',newline='') as f:
+        writer = csv.writer(f)
+        for i in ordered_dist:
+            writer.writerow([val for val in i])
+
 def retrive_data(file_name, col_count,dataset):
 
     print('retrieving data ...')
@@ -178,12 +206,26 @@ def create_image_from_vector(vec, dataset):
 if __name__ == '__main__':
     #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
 
-    file_name = 'cifar_100_non_station_1000000'
+
     elements = 1000000
     granularity = 100
     effects = 'noise'
-    seed = 12
-    main('cifar_100',file_name, elements, granularity,effects,seed)
-    #retrive_data(file_name,3073, 'cifar_10')
 
+    dataset = 'mnist'
+    if dataset == 'mnist':
+        file_name = 'mnist_non_station_1000000'
+        col_count = 784+1
+    elif dataset == 'cifar_10':
+        file_name = 'cifar_10_non_station_1000000'
+        col_count = 3072+1
+    elif dataset == 'cifar_100':
+        file_name = 'cifar_100_non_station_1000000'
+        col_count = 3072+1
+
+    seed = 12
+    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
+    #retrive_data(file_name,3073, 'cifar_10')
+    row_count=1000
+    label_count = 10
+    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
     print('done...')

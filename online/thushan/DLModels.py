@@ -438,7 +438,7 @@ class Pool(object):
 
 class StackedAutoencoderWithSoftmax(Transformer):
 
-    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
+    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log']
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
         super().__init__(layers, 1, True)
@@ -452,6 +452,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
         self.iterations = iterations
         self.rng = np.random.RandomState(0)
 
+        self._error_log = []
 
     def process(self, x, y):
         self._x = x
@@ -467,6 +468,8 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+        error_func = self.error_func(arc, x, y, batch_size, transformed_x)
+
         if early_stopping:
             softmax_train_func,softmax_finetune_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
         else:
@@ -481,7 +484,8 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         def finetune(batch_id):
             t_cost = softmax_train_func(batch_id)
-            return t_cost
+            self._error_log.append(error_func(batch_id))
+            return self._error_log[-1]
 
         def validate(batch_id):
             f_cost = softmax_finetune_func(batch_id)
@@ -990,7 +994,7 @@ class DeepReinforcementLearningModel(Transformer):
             print('Reconstruction Error (with reg): ',test_rec_err, ' (w/o reg: ', test_rec_before_reg, ') batch id: ', batch_id)
             self._reconstruction_log.append(test_rec_err)
             self._neuron_balance_log.append(self.neuron_balance)
-            print('Neuron balance log: ', self._neuron_balance_log)
+            
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
