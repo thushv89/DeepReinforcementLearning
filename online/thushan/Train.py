@@ -22,7 +22,6 @@ def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
         x_shared = theano.shared(batch_x, name + '_x_pkl')
     else:
         x_shared = theano.shared(batch_x, name + '_x_pkl')/normalize_thresh
-
     assert 0.004<=np.max(x_shared.eval())<=1.
     y_shared = T.cast(theano.shared(batch_y.astype(theano.config.floatX), name + '_y_pkl'), 'int32')
     size = batch_x.shape[0]
@@ -194,15 +193,14 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         if modelType == 'DeepRL':
             train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
-            get_act_vs_pred_valid_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
         elif modelType == 'SAE':
             pretrain_func,finetune_func,finetune_valid_func = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, True, valid_file[0],valid_file[1])
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
-            get_act_vs_pred_valid_func = model.act_vs_pred_func(arc, valid_file[0], valid_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
 
-        validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
+        if valid_file[0] and valid_file[1]:
+            validate_func = results_func(arc, valid_file[0], valid_file[1], batch_size)
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
 
         print('training data ...')
@@ -292,12 +290,6 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
             elif modelType == 'DeepRL':
 
                 from collections import Counter
-
-                if valid_file:
-                    for v_batch in range(math.ceil(valid_file[2] / batch_size)):
-                        v_dist = Counter(valid_file[1][v_batch * batch_size: (v_batch + 1) * batch_size].eval())
-                        v_distribution.append({str(k): v / sum(v_dist.values()) for k, v in v_dist.items()})
-                        model.set_valid_distribution(v_distribution)
 
                 for f_epoch in range(fine_epochs):
                     epoch_start_time = time.clock()
@@ -422,8 +414,8 @@ def get_logger(name, folder_path):
 
 def run():
 
-    dataset = 'cifar-10'
-    in_size = 3072
+    dataset = 'mnist'
+    in_size = 784
     out_size = 10
 
     learnMode = 'online'
@@ -492,6 +484,10 @@ def run():
             f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
+        elif dataset == 'cifar-10':
+            f = open('data' + os.sep + 'cifar_100_test_batch', 'rb')
+            dict = pickle.load(f,encoding='latin1')
+            test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('fine_labels'), dtype=np.float32), 'test', True, 255.0)
 
         total_rows = 500000
         train_row_count = batch_size
@@ -507,13 +503,13 @@ def run():
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             if dataset == 'mnist':
                 data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
-                valid_file = None
+                valid_file = [None,None]
             elif dataset == 'cifar-10':
                 data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
-                valid_file = None
+                valid_file = [None,None]
             elif dataset == 'cifar-100':
                 data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',train_row_count,col_count,i * train_row_count)
-                valid_file = None
+                valid_file = [None,None]
 
             if not modelType == 'MergeInc':
                 v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)

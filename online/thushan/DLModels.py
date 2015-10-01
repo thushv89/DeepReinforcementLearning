@@ -836,7 +836,6 @@ class DeepReinforcementLearningModel(Transformer):
         self.lam = lam
 
         self.train_distribution = []
-        self.valid_distribution = []
         self.pool_distribution = []
 
         self._error_log = []
@@ -1057,9 +1056,6 @@ class DeepReinforcementLearningModel(Transformer):
 
     def set_train_distribution(self, t_distribution):
         self.train_distribution = t_distribution
-
-    def set_valid_distribution(self, v_distribution):
-        self.valid_distribution = v_distribution
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)

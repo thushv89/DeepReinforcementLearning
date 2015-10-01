@@ -59,7 +59,7 @@ def cifar_100_load():
 
     train_names = ['cifar_100_train']
     valid_name = 'cifar_100_train'
-    test_name = 'cifar_100_test'
+    test_name = 'cifar_100_test_batch'
 
     train_x = []
     train_y = []
