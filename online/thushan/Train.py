@@ -349,8 +349,6 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
             print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
             print('Prev TrainErr: ', prev_train_err, ' Curr TrainErr: ', curr_train_error)
             prev_train_err = curr_train_error
-            v_errors = []
-
 
         test_errors = []
 
@@ -501,7 +499,9 @@ def run():
             print('Mean Test Error: ', np.mean(test_err),'\n')
 
             test_logger.info(list(test_err))
-
+            if (i+1)%100 == 0:
+                valid_logger.info(validation_errors)
+                
         if modelType == 'DeepRL' or modelType == 'MergeInc':
             rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,online_total_rows//online_train_row_count)
             err_log_arr = np.asarray(model._error_log).reshape(-1,online_total_rows//online_train_row_count)
