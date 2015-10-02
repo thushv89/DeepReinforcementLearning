@@ -315,7 +315,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return np.mean(v_errors),test_errors
 
-def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, early_stop=True, network_size_logger = None):
+def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
     start_time = time.clock()
 
 
@@ -330,26 +330,11 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
         v_errors = []
         for t_batch in range(math.ceil(data_file[2] / batch_size)):
-            curr_train_err = train_mergeinc(t_batch, inc, inc*.5)
+            curr_train_err = train_mergeinc(t_batch)
             v_errors.append(curr_train_err)
-            print('Train batch: ', t_batch, ' Train cost: ', curr_train_err)
-            # when hard_pool is full ...
 
             if (not v_errors) or len(v_errors)==0:
                 pass
-
-            curr_train_error = np.mean(v_errors)
-            threshold = 1.01
-            #if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
-            if curr_train_error > prev_train_err * threshold:
-
-                inc = 1. - (prev_train_err/curr_train_error)
-            else:
-                inc = 0.
-
-            print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
-            print('Prev TrainErr: ', prev_train_err, ' Curr TrainErr: ', curr_train_error)
-            prev_train_err = curr_train_error
 
         network_size_logger.info(model._network_size_log)
         model._network_size_log = []
@@ -363,7 +348,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
-    return np.mean(v_errors),test_errors,curr_train_error,inc
+    return np.mean(v_errors),test_errors
 
 
 def get_logger(name, folder_path):
@@ -403,7 +388,7 @@ def run():
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [500,500,500]
+    hid_sizes = [500]
 
     corruption_level = 0.2
     lam = 0.1
@@ -474,8 +459,6 @@ def run():
         validation_errors = []
         test_errors  = []
 
-        prev_train_err = np.inf #for merge inc function
-        inc = 0.
         for i in range(int(online_total_rows/online_train_row_count)):
 
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
@@ -492,7 +475,7 @@ def run():
             if not modelType == 'MergeInc':
                 v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
             else:
-                v_err,test_err,prev_train_err,inc = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, early_stop, network_size_logger)
+                v_err,test_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
 
             validation_errors.append(v_err)
 

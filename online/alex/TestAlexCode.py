@@ -64,29 +64,7 @@ class DiscreteRL(object):
         f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
 
 if __name__ == '__main__':
-    '''drl = DiscreteRL()
-    data = defaultdict(list)
-    d = data['Joe']
-    x = 25 // 2
-    val = np.finfo(config.floatX)'''
-
-    arr = np.ones((150,50))
-    arr2 = np.ones((100,50))*2
-
-    
-    y = T.ivector('y')
-    y_mat = theano.shared(np.zeros((5,10),dtype=theano.config.floatX),borrow=True)
-
-    given = {
-        y : np.asarray([1,2,1,2,1])
-    }
-    y_mat_update = [(y_mat, T.inc_subtensor(y_mat[T.arange(0,5),y],1))]
-
-    func = theano.function(inputs=[],outputs=[y_mat], updates=y_mat_update, givens=given, on_unused_input='warn')
-    y_mat_other = func()
-
-    y_new_mat = y_mat.get_value()
-
-    batch_scores = [(i, i+5) for i in range(5,10)]
-    print(np.min([s[1] for s in batch_scores]))
+    arr = np.arange(1,50)
+    ar2 = [arr[i] for i in range(-20,0)]
+    print(ar2)
 
