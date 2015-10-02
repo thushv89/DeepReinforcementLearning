@@ -330,7 +330,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
 
         v_errors = []
         for t_batch in range(math.ceil(data_file[2] / batch_size)):
-            curr_train_err = train_mergeinc(t_batch, inc, inc*.25)
+            curr_train_err = train_mergeinc(t_batch, inc, inc*.5)
             v_errors.append(curr_train_err)
             print('Train batch: ', t_batch, ' Train cost: ', curr_train_err)
             # when hard_pool is full ...
@@ -493,21 +493,21 @@ def run():
             validation_errors.append(v_err)
 
             print('Validation Error: ',v_err)
-            for i, err in enumerate(test_err):
-                print('batch ',i, ": ", err, end=', ')
+            for t_idx, err in enumerate(test_err):
+                print('batch ',t_idx, ": ", err, end=', ')
             print()
             print('Mean Test Error: ', np.mean(test_err),'\n')
 
             test_logger.info(list(test_err))
-            if (i+1)%100 == 0:
+            if (i+1) % 100 == 0:
                 valid_logger.info(validation_errors)
-                
+
         if modelType == 'DeepRL' or modelType == 'MergeInc':
             rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,online_total_rows//online_train_row_count)
             err_log_arr = np.asarray(model._error_log).reshape(-1,online_total_rows//online_train_row_count)
-            for i in range(rec_log_arr.shape[0]):
-                reconstruction_err_logger.info(list(rec_log_arr[i]))
-                error_logger.info(list(err_log_arr[i]))
+            for rec_i in range(rec_log_arr.shape[0]):
+                reconstruction_err_logger.info(list(rec_log_arr[rec_i]))
+                error_logger.info(list(err_log_arr[rec_i]))
 
         valid_logger.info(validation_errors)
 
