@@ -125,6 +125,8 @@ class ContinuousState(Controller):
         #to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
         err_diff = data['error_log'][-1] - data['error_log'][-2]
         to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff)
+        # newer to_move eqn
+        #to_move = 0.5*(1.5 - np.exp(-(data['neuron_balance']-1.)**2/2.)) * (1. + err_diff)
         print('To move: ', to_move)
 
         if action == self.Action.pool:

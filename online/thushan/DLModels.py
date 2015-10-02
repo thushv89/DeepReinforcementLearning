@@ -1147,7 +1147,8 @@ class MergeIncDAE(Transformer):
             if self._pre_train_pool.size < self._pre_train_pool.max_size and not self._pre_train_done:
                 print('Adding batch to pre-training pool')
                 self._pre_train_pool.add_from_shared(batch_id, batch_size, x, y)
-                return list()
+                return self._error_log[-1]
+
             elif self._pre_train_pool.size == self._pre_train_pool.max_size and not self._pre_train_done:
                 print('Pre training ...')
                 pre_train_pool_indexes = self._pre_train_pool.as_size(int(self._pre_train_pool.size * 1), batch_size)
@@ -1179,7 +1180,7 @@ class MergeIncDAE(Transformer):
             for _ in range(int(self.iterations)):
                 ae_finetune_func(batch_id)
 
-            cost = train_func(batch_id)
+            train_func(batch_id)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 

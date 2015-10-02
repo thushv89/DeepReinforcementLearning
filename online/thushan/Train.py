@@ -339,9 +339,10 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
                 pass
 
             curr_train_error = np.mean(v_errors)
-
+            threshold = 1.01
             #if curr_train_error > prev_train_err * (1 + (1-improvement_threshold)):
-            if curr_train_error > prev_train_err:
+            if curr_train_error > prev_train_err * threshold:
+
                 inc = 1. - (prev_train_err/curr_train_error)
             else:
                 inc = 0.
@@ -349,6 +350,9 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_e
             print(modelType, ' inc: ', inc, ' merge: ', inc*0.5)
             print('Prev TrainErr: ', prev_train_err, ' Curr TrainErr: ', curr_train_error)
             prev_train_err = curr_train_error
+
+        network_size_logger.info(model._network_size_log)
+        model._network_size_log = []
 
         test_errors = []
 
