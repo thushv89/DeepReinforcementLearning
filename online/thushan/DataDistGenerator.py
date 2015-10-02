@@ -185,14 +185,14 @@ def retrive_data(file_name, col_count,dataset):
     print('retrieving data ...')
     filename = 'data'+os.sep+file_name +'.pkl'
 
-    row_count = 500
+    row_count = 1000
     #with open('test.bin', 'br') as f:
-    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*1000,shape=(row_count,col_count))
+    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*10000,shape=(row_count,col_count))
     data_new = np.empty((row_count,col_count),dtype=np.float32)
     data_new[:] = newfp[:]
     arr = data_new[:,-1]
 
-    create_image_from_vector(data_new[435,:-1],dataset)
+    create_image_from_vector(data_new[988,:-1],dataset)
 
 def create_image_from_vector(vec, dataset):
     from pylab import imshow,show,cm
@@ -224,8 +224,8 @@ if __name__ == '__main__':
 
     seed = 12
     #main(dataset, col_count,file_name, elements, granularity,effects,seed)
-    #retrive_data(file_name,3073, 'cifar_10')
+    retrive_data(file_name,col_count, dataset)
     row_count=1000
     label_count = 10
-    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
+    #write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
     print('done...')

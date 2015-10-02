@@ -1177,7 +1177,7 @@ class MergeIncDAE(Transformer):
                 else:
                     inc = 0.
                 print('Total inc: ', inc, ' Total merge: ', 0.5*inc)
-                merge_inc_func_hard_pool(pool_indexes, 0.5*inc, inc)
+                merge_inc_func_hard_pool(pool_indexes, 0.25*inc, inc)
                 self._hard_pool.clear()
 
             for _ in range(int(self.iterations)):
