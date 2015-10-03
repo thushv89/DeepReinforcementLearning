@@ -375,12 +375,12 @@ def get_logger(name, folder_path):
 
 def run():
 
-    dataset = 'mnist'
-    in_size = 784
-    out_size = 10
+    dataset = 'cifar-100'
+    in_size = 3072
+    out_size = 100
 
     learnMode = 'online'
-    modelType = 'MergeInc'
+    modelType = 'SAE'
 
 
     learning_rate = 0.25
@@ -450,7 +450,7 @@ def run():
             f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
-        elif dataset == 'cifar-10':
+        elif dataset == 'cifar-100':
             f = open('data' + os.sep + 'cifar_100_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('fine_labels'), dtype=np.float32), 'test', True, 255.0)

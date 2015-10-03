@@ -1099,7 +1099,7 @@ class MergeIncDAE(Transformer):
         self._reconstruction_log = []
         self._neuron_balance_log = []
         self._network_size_log = []
-
+        self._inc_log = [0.05]
         self.total_err = 0.
         #self.total_merge = 0.
 
@@ -1168,16 +1168,24 @@ class MergeIncDAE(Transformer):
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
                 if len(self._error_log)>=40:
+                    eps1 = 0.025
+                    eps2 = 0.01
                     curr_err = np.sum([self._error_log[i] for i in range(-20,0)])
                     prev_err = np.sum([self._error_log[i] for i in range(-40,-20)])
-                    if curr_err > prev_err * 1.01:
-                        inc = 1- (prev_err/curr_err)
+
+                    if (curr_err/prev_err) < 1. - eps1:
+                        inc = self._inc_log[-1] + 1.2/self.layers[1].W.get_value().shape[0]
+                    elif (curr_err/prev_err) > 1. - eps2:
+                        inc = self._inc_log[-1]/2.
                     else:
-                        inc = 0.
+                        inc = self._inc_log[-1]
+
+                    self._inc_log.append(inc)
                 else:
-                    inc = 0.
+                    inc = self._inc_log[-1]
                 print('Total inc: ', inc, ' Total merge: ', 0.5*inc)
-                merge_inc_func_hard_pool(pool_indexes, 0.25*inc, inc)
+
+                merge_inc_func_hard_pool(pool_indexes, 0.5*inc, inc)
                 self._hard_pool.clear()
 
             for _ in range(int(self.iterations)):
