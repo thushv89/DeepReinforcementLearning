@@ -1172,15 +1172,18 @@ class MergeIncDAE(Transformer):
                     eps2 = 0.01
                     curr_err = np.sum([self._error_log[i] for i in range(-20,0)])
                     prev_err = np.sum([self._error_log[i] for i in range(-40,-20)])
-
+                    print('Curr Err: ', curr_err, ' Prev Err: ',prev_err)
                     if (curr_err/prev_err) < 1. - eps1:
+                        print('e ratio < 1-eps',curr_err/prev_err,' ',1-eps1)
                         inc = self._inc_log[-1] + 1.2/self.layers[1].W.get_value().shape[0]
                     elif (curr_err/prev_err) > 1. - eps2:
+                        print('e ratio > 1-eps',curr_err/prev_err,' ',1-eps2)
                         inc = self._inc_log[-1]/2.
                     else:
                         inc = self._inc_log[-1]
 
                     self._inc_log.append(inc)
+                    print('Inc Log: ',self._inc_log)
                 else:
                     inc = self._inc_log[-1]
                 print('Total inc: ', inc, ' Total merge: ', 0.5*inc)

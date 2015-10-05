@@ -375,12 +375,12 @@ def get_logger(name, folder_path):
 
 def run():
 
-    dataset = 'cifar-100'
+    dataset = 'cifar-10'
     in_size = 3072
-    out_size = 100
+    out_size = 10
 
     learnMode = 'online'
-    modelType = 'SAE'
+    modelType = 'MergeInc'
 
 
     learning_rate = 0.25
