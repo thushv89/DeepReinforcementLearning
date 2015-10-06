@@ -7,6 +7,7 @@
 *.tar
 *.pkl
 *.bin
+*.csv
 .ipython/
 .idea/
 Data/
