@@ -119,7 +119,7 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
 
     # number of samples
     n = math.ceil(elements / granularity)
-    Xtest = np.linspace(0, 10, n).reshape(-1, 1)
+    Xtest = np.linspace(0, col_count, n).reshape(-1, 1)
     L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
 
     # massage the data to get a good distribution
@@ -175,7 +175,7 @@ def write_data_distribution(filename, col_count, row_count, row_total, label_cou
             ordered_dist_i.append(dist_i[str(k)] if str(k) in dist_i else 0)
         ordered_dist.append(ordered_dist_i)
 
-    with open('label_dist.csv', 'w',newline='') as f:
+    with open('label_dist_cifar_100.csv', 'w',newline='') as f:
         writer = csv.writer(f)
         for i in ordered_dist:
             writer.writerow([val for val in i])
@@ -206,12 +206,16 @@ def create_image_from_vector(vec, dataset):
 if __name__ == '__main__':
     #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
 
+    seed = 12
 
     elements = 1000000
     granularity = 100
     effects = 'noise'
+    row_count=1000
+    label_count = 100
 
-    dataset = 'mnist'
+    dataset = 'cifar_100'
+
     if dataset == 'mnist':
         file_name = 'mnist_non_station_1000000'
         col_count = 784+1
@@ -222,10 +226,9 @@ if __name__ == '__main__':
         file_name = 'cifar_100_non_station_1000000'
         col_count = 3072+1
 
-    seed = 12
-    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
-    retrive_data(file_name,col_count, dataset)
-    row_count=1000
-    label_count = 10
-    #write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
+
+    main(dataset, col_count,file_name, elements, granularity,effects,seed)
+    #retrive_data(file_name,col_count, dataset)
+
+    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
     print('done...')
