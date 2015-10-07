@@ -457,7 +457,7 @@ def run():
 
         col_count = in_size + 1
         validation_errors = []
-        test_errors  = []
+        mean_test_errors  = []
 
         for i in range(int(online_total_rows/online_train_row_count)):
 
@@ -478,6 +478,7 @@ def run():
                 v_err,test_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
 
             validation_errors.append(v_err)
+            mean_test_errors.append(np.mean(test_err))
 
             print('Validation Error: ',v_err)
             for t_idx, err in enumerate(test_err):
@@ -485,7 +486,7 @@ def run():
             print()
             print('Mean Test Error: ', np.mean(test_err),'\n')
 
-            test_logger.info(list(test_err))
+
             if (i+1) % 100 == 0:
                 valid_logger.info(validation_errors)
 
@@ -497,7 +498,7 @@ def run():
                 error_logger.info(list(err_log_arr[rec_i]))
 
         valid_logger.info(validation_errors)
-
+        test_logger.info(list(mean_test_errors))
     else:
 
         prev_train_err = np.inf

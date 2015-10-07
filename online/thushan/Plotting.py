@@ -26,7 +26,6 @@ x_axis = np.linspace(1,1000,1000)
 
 
 plt.figure(1)
-
 i_idx = 0
 for i in [0,4*3,8*3]:
     for j in [0,3]:
@@ -39,7 +38,19 @@ for i in [0,4*3,8*3]:
         plt.title(chart_titles[int(i/3+j/3)])
         legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
     i_idx += 1
-#plt.figure(2)
 
+plt.figure(2)
+i_idx = 0
+for i in [2,6*3,10*3]:
+    for j in [0,3]:
+        str_subplot = '23' + str(i_idx+j+1)
+        plt.subplot(int(str_subplot))
+        plt.plot(x_axis,all_data[i+j],'r',label=legends[0])
+        plt.plot(x_axis,all_data[i+j+1],'b',label=legends[1])
+        plt.plot(x_axis,all_data[i+j+2],'g',label=legends[2])
+        plt.xlabel('Position in the Dataset')
+        plt.title(chart_titles[int(i/3+j/3)])
+        legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
+    i_idx += 1
 
 plt.show()

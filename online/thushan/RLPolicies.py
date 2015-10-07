@@ -87,7 +87,8 @@ class ContinuousState(Controller):
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
-                neuron_penalty = 1.5 * abs(1.5 - data['neuron_balance'])
+                # all tests were done with 1.5
+                neuron_penalty = .25 * abs(1.5 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
@@ -126,7 +127,7 @@ class ContinuousState(Controller):
         err_diff = data['error_log'][-1] - data['error_log'][-2]
         to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff)
         # newer to_move eqn
-        #to_move = 0.5*(1.5 - np.exp(-(data['neuron_balance']-1.)**2/2.)) * (1. + err_diff)
+        #to_move = 0.2*(1.5 - np.exp(-(data['neuron_balance']-1.)**2/2.)) * (1. + err_diff) * (1. + data['error_log'][-1])
         print('To move: ', to_move)
 
         if action == self.Action.pool:
