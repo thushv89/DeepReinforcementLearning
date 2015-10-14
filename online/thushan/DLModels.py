@@ -244,7 +244,7 @@ class DeepAutoencoder(Transformer):
         return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens, on_unused_input='warn')
 
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=[self.cost,self.cost_before_reg], updates=None, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)
 
     def get_hard_examples(self, _, x, y, batch_size, transformed_x=identity):
         '''
@@ -843,6 +843,7 @@ class DeepReinforcementLearningModel(Transformer):
         self.pool_distribution = []
 
         self._error_log = []
+        self._valid_error_log = []
         self._reconstruction_log = []
         self._neuron_balance_log = []
         self._network_size_log = []
@@ -948,19 +949,15 @@ class DeepReinforcementLearningModel(Transformer):
 
         return 1 - (last[0] / batches_covered)
 
-    def get_batch_count(self, data_y):
-        from collections import Counter
-        dist = Counter(data_y)
-        norm_dist = {str(k): v / sum(dist.values()) for k, v in dist.items()}
-        return norm_dist
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
+    def train_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
+        valid_error_func = self.error_func(arc,v_x,v_y, batch_size, apply_x)
 
         merge_inc_func_batch = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, x, y)
         merge_inc_func_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._pool.data, self._pool.data_y)
@@ -986,26 +983,17 @@ class DeepReinforcementLearningModel(Transformer):
         # get early stopping
         def train_adaptively(batch_id):
 
-
             self._error_log.append(np.asscalar(error_func(batch_id)))
-            test_rec_results = reconstruction_func(batch_id)
-            test_rec_err = np.asscalar(test_rec_results[0])
-            test_rec_before_reg = test_rec_results[1]
-            print('Reconstruction Error (with reg): ',test_rec_err, ' (w/o reg: ', test_rec_before_reg, ') batch id: ', batch_id)
-            self._reconstruction_log.append(test_rec_err)
+            self._valid_error_log.append(np.asscalar(valid_error_func(batch_id)))
+
+            rec_err = reconstruction_func(batch_id)
+            print('Reconstruction Error: ',rec_err,', batch id: ', batch_id)
+            self._reconstruction_log.append(np.asscalar(rec_err))
             self._neuron_balance_log.append(self.neuron_balance)
 
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
-
-            if self._pool.size > 0:
-                print('Pool Distribution ...')
-                pool_indexes = self._pool.as_size(int(self._pool.size * 1), self._mi_batch_size)
-                for i in pool_indexes:
-                    print(self.get_batch_count(self._pool.data_y[i * batch_size : (i + 1) * batch_size].eval()))
-
-            self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1],batch_size,x,y)
 
             data = {
                 'mea_30': moving_average(self._error_log, 30),
@@ -1015,6 +1003,7 @@ class DeepReinforcementLearningModel(Transformer):
                 'initial_size': self.layers[1].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
                 'error_log': self._error_log,
+                'valid_error_log': self._valid_error_log,
                 'errors': self._error_log[-1],
                 'neuron_balance': self._neuron_balance_log[-1],
                 'reconstruction': self._reconstruction_log[-1],
@@ -1054,7 +1043,7 @@ class DeepReinforcementLearningModel(Transformer):
             #    train_pool(self._diff_pool,train_func_diff_pool,1)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
-            return self._error_log[-1]
+            return self._valid_error_log[-1]
 
         return train_adaptively
 
@@ -1096,9 +1085,12 @@ class MergeIncDAE(Transformer):
         self.lam = lam
 
         self._error_log = []
+        self._valid_error_log = []
         self._reconstruction_log = []
+
         self._neuron_balance_log = []
         self._network_size_log = []
+
         self._inc_log = [0.05]
         self.total_err = 0.
         #self.total_merge = 0.
@@ -1110,7 +1102,7 @@ class MergeIncDAE(Transformer):
         self._softmax.process(x, y)
         self._merge_increment.process(x, y)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, early_stop, v_x, v_y, apply_x=identity):
+    def train_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         layer_greedy = [ ae.train_func(arc, learning_rate, self._pre_train_pool.data,  self._pre_train_pool.data_y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._merge_increment._layered_autoencoders) ]
@@ -1121,6 +1113,7 @@ class MergeIncDAE(Transformer):
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
+        valid_error_func = self.error_func(arc, v_x, v_y, batch_size, apply_x)
 
         merge_inc_func_hard_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._hard_pool.data, self._hard_pool.data_y)
 
@@ -1136,6 +1129,7 @@ class MergeIncDAE(Transformer):
             rec_err, rec_err_wo_reg = reconstruction_func(batch_id)
             self._reconstruction_log.append(np.asscalar(rec_err))
             self._error_log.append(error_func(batch_id))
+            self._valid_error_log.append(valid_error_func(batch_id))
 
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
@@ -1143,7 +1137,7 @@ class MergeIncDAE(Transformer):
             if self._pre_train_pool.size < self._pre_train_pool.max_size and not self._pre_train_done:
                 print('Adding batch to pre-training pool')
                 self._pre_train_pool.add_from_shared(batch_id, batch_size, x, y)
-                return self._error_log[-1]
+                return self._valid_error_log[-1]
 
             elif self._pre_train_pool.size == self._pre_train_pool.max_size and not self._pre_train_done:
                 print('Pre training ...')
@@ -1159,7 +1153,7 @@ class MergeIncDAE(Transformer):
                     train_func_pre_train(pool_idx)
                 print('Pre training finished')
                 self._pre_train_done = True
-                return self._error_log[-1]
+                return self._valid_error_log[-1]
 
             x_hard, y_hard = hard_examples_func(batch_id)
             self._hard_pool.add(x_hard,y_hard)
@@ -1167,15 +1161,15 @@ class MergeIncDAE(Transformer):
             print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
-                if len(self._error_log)>=40:
+                if len(self._valid_error_log)>=40:
                     eps1 = 0.025
                     eps2 = 0.01
-                    curr_err = np.sum([self._error_log[i] for i in range(-20,0)])
-                    prev_err = np.sum([self._error_log[i] for i in range(-40,-20)])
+                    curr_err = np.sum([self._valid_error_log[i] for i in range(-20,0)])
+                    prev_err = np.sum([self._valid_error_log[i] for i in range(-40,-20)])
                     print('Curr Err: ', curr_err, ' Prev Err: ',prev_err)
                     if (curr_err/prev_err) < 1. - eps1:
                         print('e ratio < 1-eps',curr_err/prev_err,' ',1-eps1)
-                        inc = self._inc_log[-1] + 1.2/self.layers[1].W.get_value().shape[0]
+                        inc = self._inc_log[-1] + 1.1/self.layers[1].W.get_value().shape[0]
                     elif (curr_err/prev_err) > 1. - eps2:
                         print('e ratio > 1-eps',curr_err/prev_err,' ',1-eps2)
                         inc = self._inc_log[-1]/2.
@@ -1198,7 +1192,7 @@ class MergeIncDAE(Transformer):
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
 
-            return self._error_log[-1]
+            return self._valid_error_log[-1]
 
         return train_mergeinc
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):

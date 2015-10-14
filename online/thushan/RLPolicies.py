@@ -57,6 +57,11 @@ class ContinuousState(Controller):
         state = (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30'))
         print('current state %f, %f, %f, %f, %f' % (data['r_15'][-1], data['neuron_balance'], ma_state('mea_5'), ma_state('mea_15'), ma_state('mea_30')))
         print('initial_size ',data['initial_size'])
+
+        err_diff = data['valid_error_log'][-1] - data['valid_error_log'][-2]
+        curr_err = data['valid_error_log'][-1]
+        print('Err log 1: ',data['valid_error_log'][-1])
+        print('Err log 2: ',data['valid_error_log'][-2])
         # since we have a continuous state space, we need a regression technique to get the Q-value for prev state and action
         # for a discrete state space, this can be done by using a hashtable Q(s,a) -> value
         gps = {}
@@ -78,17 +83,15 @@ class ContinuousState(Controller):
         if self.prev_state or self.prev_action:
 
             #reward = - data['error_log'][-1]
-            err_diff = data['error_log'][-1] - data['error_log'][-2]
-            print('Err log 1: ',data['error_log'][-1])
-            print('Err log 2: ',data['error_log'][-2])
-            reward = (1 - err_diff)*(1-data['error_log'][-1])
+
+            reward = (1 - err_diff)*(1-curr_err)
             print('Reward: ', reward)
             neuron_penalty = 0
 
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
                 # the coeff was 2.0 before
                 # all tests were done with 1.5
-                neuron_penalty = .25 * abs(1.5 - data['neuron_balance'])
+                neuron_penalty = .5 * abs(1.5 - data['neuron_balance'])
             reward -= neuron_penalty
 
             print('reward', reward, 'neuron_penalty', neuron_penalty)
@@ -108,7 +111,7 @@ class ContinuousState(Controller):
         #action = list(self.Action)[i % len(self.Action)]
         #the first time move() is called
         #Evenly chosing actions is important because with this algorithm will learn q values for all actions
-        if len(gps) == 0 or i <= 50:
+        if len(gps) == 0 or i <= 60:
             action = list(self.Action)[i % len(self.Action)]
             print('evenly chose:', action)
         else:
@@ -124,10 +127,9 @@ class ContinuousState(Controller):
                 print(a, np.asscalar(gp.predict(state)[0]))
 
         #to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
-        err_diff = data['error_log'][-1] - data['error_log'][-2]
-        to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff)
+        #to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff) * (1. + curr_err)
         # newer to_move eqn
-        #to_move = 0.2*(1.5 - np.exp(-(data['neuron_balance']-1.)**2/2.)) * (1. + err_diff) * (1. + data['error_log'][-1])
+        to_move = np.exp(-(data['neuron_balance']-1.)**2/5.) * np.abs(err_diff)
         print('To move: ', to_move)
 
         if action == self.Action.pool:

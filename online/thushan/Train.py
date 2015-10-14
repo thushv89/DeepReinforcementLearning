@@ -181,7 +181,7 @@ def train_validate_and_test(batch_size, data_file, epochs, learning_rate, model,
     return v_errors,test_errors
 
 
-def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
+def train_validate_and_test_v2(batch_size, data_file, next_data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
     t_distribution = []
     v_distribution = []
     start_time = time.clock()
@@ -191,7 +191,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
         results_func = model.error_func
 
         if modelType == 'DeepRL':
-            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, valid_file[0],valid_file[1])
+            train_adaptive = model.train_func(arc, learning_rate, data_file[0], data_file[1], next_data_file[0], next_data_file[1], batch_size)
             get_act_vs_pred_train_func = model.act_vs_pred_func(arc, data_file[0], data_file[1], batch_size)
             get_act_vs_pred_test_func = model.act_vs_pred_func(arc, test_file[0], test_file[1], batch_size)
         elif modelType == 'SAE':
@@ -315,7 +315,7 @@ def train_validate_and_test_v2(batch_size, data_file, pre_epochs, fine_epochs, l
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
     return np.mean(v_errors),test_errors
 
-def train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
+def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, pre_epochs, fine_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop=True, network_size_logger = None):
     start_time = time.clock()
 
 
@@ -374,13 +374,27 @@ def get_logger(name, folder_path):
     return logger
 
 def run():
+    log_suffix = ''
+    import getopt
+    import sys
+    try:
+        opts,args = getopt.getopt(sys.argv[1:],"",["suffix="])
+    except getopt.GetoptError:
+        print('<filename>.py --suffix <log file prefix>')
+        sys.exit(2)
+
+    #when I run in command line
+    if len(opts)!=0:
+        for opt,arg in opts:
+            if opt == '--suffix':
+                log_suffix = arg
 
     dataset = 'cifar-10'
     in_size = 3072
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'MergeInc'
+    modelType = 'DeepRL'
 
 
     learning_rate = 0.25
@@ -410,15 +424,15 @@ def run():
         layers_str += str(s) + ', '
     layers_str += str(out_size)
 
-    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
-    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
 
     network_size_logger, reconstruction_err_logger, error_logger = None, None, None
 
     if modelType == 'DeepRL' or modelType == 'MergeInc':
-        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
-        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
-        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str,'logs')
+        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
+        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
+        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
 
 
@@ -458,41 +472,45 @@ def run():
         col_count = in_size + 1
         validation_errors = []
         mean_test_errors  = []
+        curr_data_file = None
 
         for i in range(int(online_total_rows/online_train_row_count)):
-
+            v_err,test_err = None,None
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             if dataset == 'mnist':
-                data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
             elif dataset == 'cifar-10':
-                data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
             elif dataset == 'cifar-100':
-                data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
                 valid_file = [None,None]
 
-            if not modelType == 'MergeInc':
-                v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
-            else:
-                v_err,test_err = train_validate_mergeinc(batch_size, pool_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
+            if curr_data_file and not modelType == 'MergeInc':
+                v_err,test_err = train_validate_and_test_v2(batch_size, curr_data_file, next_data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
+            elif curr_data_file and modelType == 'MergeInc':
+                v_err,test_err = train_validate_mergeinc(batch_size, pool_size, curr_data_file, next_data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)
 
-            validation_errors.append(v_err)
-            mean_test_errors.append(np.mean(test_err))
+            if v_err and test_err:
+                validation_errors.append(v_err)
+                mean_test_errors.append(np.mean(test_err))
 
-            print('Validation Error: ',v_err)
-            for t_idx, err in enumerate(test_err):
-                print('batch ',t_idx, ": ", err, end=', ')
-            print()
-            print('Mean Test Error: ', np.mean(test_err),'\n')
+                print('Validation Error: ',v_err)
+                for t_idx, err in enumerate(test_err):
+                    print('batch ',t_idx, ": ", err, end=', ')
+                print()
+                print('Mean Test Error: ', np.mean(test_err),'\n')
 
 
             if (i+1) % 100 == 0:
                 valid_logger.info(validation_errors)
 
+            curr_data_file = next_data_file
+
         if modelType == 'DeepRL' or modelType == 'MergeInc':
-            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,online_total_rows//online_train_row_count)
-            err_log_arr = np.asarray(model._error_log).reshape(-1,online_total_rows//online_train_row_count)
+            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,len(model._reconstruction_log))
+            err_log_arr = np.asarray(model._error_log).reshape(-1,len(model._error_log))
             for rec_i in range(rec_log_arr.shape[0]):
                 reconstruction_err_logger.info(list(rec_log_arr[rec_i]))
                 error_logger.info(list(err_log_arr[rec_i]))

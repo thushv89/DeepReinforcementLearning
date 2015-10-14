@@ -187,22 +187,25 @@ def retrive_data(file_name, col_count,dataset):
 
     row_count = 1000
     #with open('test.bin', 'br') as f:
-    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*10000,shape=(row_count,col_count))
+    newfp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*120000,shape=(row_count,col_count))
     data_new = np.empty((row_count,col_count),dtype=np.float32)
     data_new[:] = newfp[:]
     arr = data_new[:,-1]
 
-    create_image_from_vector(data_new[988,:-1],dataset)
+    create_image_from_vector(data_new[980,:-1],dataset)
 
 def create_image_from_vector(vec, dataset):
-    from pylab import imshow,show,cm
     if dataset == 'mnist':
+        from pylab import imshow,show,cm
         imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
-    elif dataset == 'cifar_10':
+        show()
+    elif dataset == 'cifar_10' or dataset=='cifar_100':
+        import matplotlib.pyplot as plt
         new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
-        imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
-    show()
-
+        rgb_vec = [np.reshape(vec[0:1024],(-1,32)),np.reshape(vec[1024:2048],(-1,32)),np.reshape(vec[2048:3072],(-1,32))]
+        plt.imshow(np.transpose(np.asarray(rgb_vec),axes=(1,2,0)))
+        plt.axis('off')
+        plt.show()
 if __name__ == '__main__':
     #logging.basicConfig(filename="labels.log", level=logging.DEBUG)
 
@@ -212,22 +215,25 @@ if __name__ == '__main__':
     granularity = 100
     effects = 'noise'
     row_count=1000
-    label_count = 100
 
-    dataset = 'cifar_100'
+
+    dataset = 'cifar_10'
 
     if dataset == 'mnist':
         file_name = 'mnist_non_station_1000000'
         col_count = 784+1
+        label_count = 10
     elif dataset == 'cifar_10':
         file_name = 'cifar_10_non_station_1000000'
         col_count = 3072+1
+        label_count = 10
     elif dataset == 'cifar_100':
         file_name = 'cifar_100_non_station_1000000'
         col_count = 3072+1
+        label_count = 100
 
 
-    main(dataset, col_count,file_name, elements, granularity,effects,seed)
+    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
     #retrive_data(file_name,col_count, dataset)
 
     write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
