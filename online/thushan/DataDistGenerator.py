@@ -85,6 +85,39 @@ def cifar_100_load():
 
     return all_data
 
+def svhn_load():
+
+    import scipy.io as sio
+
+    train_name = 'svhn_train_32x32.mat'
+    valid_name = 'svhn_train_32x32.mat'
+    test_name = 'svhn_test_32x32.mat'
+
+    train_x = []
+    train_y = []
+
+    data = sio.loadmat('data' + os.sep +train_name)
+    train_x = data['X']
+    train_y = data['y']
+
+    res_train_x  = np.swapaxes(train_x,0,1).T.reshape((-1,3072),order='C')/255.
+    create_image_from_vector(res_train_x[534,:],'svhn','rgb')
+    train_set = [res_train_x,train_y]
+
+    f = open('data' + os.sep +valid_name, 'rb')
+    dict = pickle.load(f,encoding='latin1')
+    valid_set = [dict.get('data')/255.,dict.get('labels')]
+
+    f = open('data' + os.sep +test_name, 'rb')
+    dict = pickle.load(f,encoding='latin1')
+    test_set = [dict.get('data')/255.,dict.get('labels')]
+
+    f.close()
+
+    all_data = [(np.asarray(train_x),np.asarray(train_y)),(valid_set[0],valid_set[1]),(test_set[0],test_set[1])]
+
+    return all_data
+
 def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12):
 
     # seed the generator (Random num generators use pseudo-random sequences)
@@ -99,6 +132,8 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
         train, valid, _ = cifar_10_load()
     elif dataset == 'cifar_100':
         train, valid, _ = cifar_100_load()
+    elif dataset == 'svhn':
+        train, valid, _ = svhn_load()
 
     np.random.seed(seed)
     random.seed(seed)
@@ -194,16 +229,21 @@ def retrive_data(file_name, col_count,dataset):
 
     create_image_from_vector(data_new[980,:-1],dataset)
 
-def create_image_from_vector(vec, dataset):
+def create_image_from_vector(vec, dataset,type='bw'):
     if dataset == 'mnist':
         from pylab import imshow,show,cm
         imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
         show()
-    elif dataset == 'cifar_10' or dataset=='cifar_100':
+    elif dataset == 'cifar_10' or dataset=='cifar_100' or dataset=='svhn':
         import matplotlib.pyplot as plt
-        new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
-        rgb_vec = [np.reshape(vec[0:1024],(-1,32)),np.reshape(vec[1024:2048],(-1,32)),np.reshape(vec[2048:3072],(-1,32))]
-        plt.imshow(np.transpose(np.asarray(rgb_vec),axes=(1,2,0)))
+        import matplotlib.cm as cm
+        if type=='rgb':
+            rgb_vec = [np.reshape(vec[0:1024],(-1,32)),np.reshape(vec[1024:2048],(-1,32)),np.reshape(vec[2048:3072],(-1,32))]
+            plt.imshow(np.transpose(np.asarray(rgb_vec),axes=(1,2,0)))
+        else:
+            new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
+            plt.imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
+
         plt.axis('off')
         plt.show()
 if __name__ == '__main__':
@@ -217,7 +257,7 @@ if __name__ == '__main__':
     row_count=1000
 
 
-    dataset = 'cifar_10'
+    dataset = 'svhn'
 
     if dataset == 'mnist':
         file_name = 'mnist_non_station_1000000'
@@ -231,10 +271,13 @@ if __name__ == '__main__':
         file_name = 'cifar_100_non_station_1000000'
         col_count = 3072+1
         label_count = 100
+    elif dataset == 'svhn':
+        file_name = 'svhn_non_station_1000000'
+        col_count = 3072+1
+        label_count = 10
 
-
-    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
+    main(dataset, col_count,file_name, elements, granularity,effects,seed)
     #retrive_data(file_name,col_count, dataset)
 
-    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
+    #write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
     print('done...')
