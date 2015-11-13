@@ -597,7 +597,7 @@ class MergeIncrementingAutoencoder(Transformer):
         # the merge is done only for the first hidden layer.
         # apperantly this has been tested against doing this for all layers.
         # but doing this only to the first layer has achieved the best performance
-        def merge_model(pool_indexes, merge_percentage, inc_percentage):
+        def merge_model(layer_idx,pool_indexes, merge_percentage, inc_percentage):
             '''
             Merge/Increment the batch using given pool of data
             :param pool_indexes:
@@ -607,14 +607,14 @@ class MergeIncrementingAutoencoder(Transformer):
             '''
 
             prev_map = {}
-            prev_dimensions = self.layers[0].initial_size[0]
+            prev_dimensions = self.layers[layer_idx].initial_size[0]
 
             used = set()
             empty_slots = []
 
             # first layer
-            layer_weights = self.layers[0].W.get_value().T.copy()
-            layer_bias = self.layers[0].b.get_value().copy()
+            layer_weights = self.layers[layer_idx].W.get_value().T.copy()
+            layer_bias = self.layers[layer_idx].b.get_value().copy()
 
             # initialization of weights
             init = 4 * np.sqrt(6.0 / (sum(layer_weights.shape)))
@@ -670,8 +670,8 @@ class MergeIncrementingAutoencoder(Transformer):
             # new_size: new layer size after increment/reduce op
             # prev_dimension: size of input layer
             new_layer_weights = np.zeros((new_size,prev_dimensions), dtype = theano.config.floatX)
-            print('Old layer 1 size: ',layer_weights.shape[0])
-            print('New layer 1 size: ',new_layer_weights.shape[0])
+            print('Old layer ', layer_idx,' size: ',layer_weights.shape[0])
+            print('New layer ',layer_idx,' size: ',new_layer_weights.shape[0])
 
             # the existing values from layer_weights copied to new layer weights
             # and it doesn't matter if layer_weights.shape[0]<new_layer_weights.shape[0] it'll assign values until it reaches the end
@@ -685,32 +685,32 @@ class MergeIncrementingAutoencoder(Transformer):
             print('New layer 1 size (bias): ',layer_bias.shape[0])
             layer_bias.resize(new_size, refcheck=False)
             print('New layer 1 size (bias): ',layer_bias.shape[0])
-            layer_bias_prime = self.layers[0].b_prime.get_value().copy()
+            layer_bias_prime = self.layers[layer_idx].b_prime.get_value().copy()
             layer_bias_prime.resize(prev_dimensions)
 
             prev_dimensions = new_layer_weights.shape[0]
 
-            self.layers[0].W.set_value(new_layer_weights.T)
-            self.layers[0].b.set_value(layer_bias)
-            self.layers[0].b_prime.set_value(layer_bias_prime)
+            self.layers[layer_idx].W.set_value(new_layer_weights.T)
+            self.layers[layer_idx].b.set_value(layer_bias)
+            self.layers[layer_idx].b_prime.set_value(layer_bias_prime)
 
             #if empty_slots:
             #    for _ in range(int(self.iterations)):
             #        for i in pool_indexes:
             #            layer_greedy[0](i, empty_slots)
 
-            last_layer_weights = self.layers[1].W.get_value().copy()
+            last_layer_weights = self.layers[layer_idx+1].W.get_value().copy()
 
             for dest, src in prev_map.items():
                 last_layer_weights[dest] = last_layer_weights[src]
                 last_layer_weights[src] = np.zeros(last_layer_weights.shape[1])
 
-            last_layer_weights.resize((prev_dimensions, self.layers[1].initial_size[1]),refcheck=False)
-            last_layer_prime = self.layers[1].b_prime.get_value().copy()
+            last_layer_weights.resize((prev_dimensions, self.layers[layer_idx+1].initial_size[1]),refcheck=False)
+            last_layer_prime = self.layers[layer_idx+1].b_prime.get_value().copy()
             last_layer_prime.resize(prev_dimensions, refcheck=False)
 
-            self.layers[1].W.set_value(last_layer_weights)
-            self.layers[1].b_prime.set_value(last_layer_prime)
+            self.layers[layer_idx+1].W.set_value(last_layer_weights)
+            self.layers[layer_idx+1].b_prime.set_value(last_layer_prime)
 
             for _ in range(int(self.iterations)):
                 for i in pool_indexes:
