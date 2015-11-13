@@ -964,7 +964,7 @@ class DeepReinforcementLearningModel(Transformer):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
-        #out_funcs = self._softmax.show_out_func(arc, learning_rate,x,y,batch_size,apply_x) #this was to check dropout masking
+        out_funcs = self._softmax.show_out_func(arc, learning_rate,x,y,batch_size,apply_x) #this was to check dropout masking
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
