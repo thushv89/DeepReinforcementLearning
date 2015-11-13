@@ -77,7 +77,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size,dropout):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -92,7 +92,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_le
     elif model_type == 'MergeInc':
         model = DLModels.MergeIncDAE(layers, corruption_level, rng, iterations, lam, batch_size, pool_size)
 
-    model.process(T.matrix('x'), T.ivector('y'))
+    model.process(T.matrix('x'), T.ivector('y'),dropout)
 
     return model
 
@@ -407,20 +407,20 @@ def run():
                 log_suffix = arg
 
     dataset = 'cifar-10'
-    turn_bw = True # turn images black and white (for cifar-10 & cifar-100)
-    in_size = 1024
+    turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
+    in_size = 3072
     out_size = 10
 
     learnMode = 'online'
     modelType = 'DeepRL'
 
 
-    learning_rate = 0.25
+    learning_rate = 0.1
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [500]
+    hid_sizes = [512,512]
 
     corruption_level = 0.2
     lam = 0.1
@@ -451,7 +451,7 @@ def run():
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
         reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
         error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size,dropout=True)
 
 
     model_info = '---------- Model Information -------------\n'
@@ -486,6 +486,13 @@ def run():
             f = open('data' + os.sep + 'cifar_100_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
             test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('fine_labels'), dtype=np.float32), 'test', True, 255.0, turn_bw)
+        elif dataset == 'svhn':
+            import scipy.io as sio
+            testdata = sio.loadmat('data' + os.sep +'svhn_test_32x32.mat')
+            test_x = testdata['X']
+            test_y = [ele[0] for ele in testdata['y']]
+            res_test_x  = np.swapaxes(test_x,0,1).T.reshape((-1,3072),order='C')
+            test_file = make_shared(np.asarray(res_test_x, dtype=np.float32), np.asarray(test_y, dtype=np.float32), 'test', True, 255.0, turn_bw)
 
         validation_errors = []
         mean_test_errors  = []
@@ -503,7 +510,9 @@ def run():
             elif dataset == 'cifar-100':
                 next_data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
                 valid_file = [None,None]
-
+            elif dataset == 'svhn':
+                next_data_file = load_from_memmap('data' + os.sep + 'svhn_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
+                valid_file = [None,None]
 
 
             if curr_data_file and not modelType == 'MergeInc':

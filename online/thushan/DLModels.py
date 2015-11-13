@@ -12,7 +12,7 @@ from math import ceil
 def identity(x):
     return x
 
-def chained_output(layers, x):
+def chained_output(layers, x,dropout):
     '''
     This method is applying the given transformation (lambda expression) recursively
     to a sequence starting with an initial value (i.e. x)
@@ -20,7 +20,7 @@ def chained_output(layers, x):
     :param x: Initial value to start recursion
     :return: the final value (output after input passing through multiple neural layers)
     '''
-    return functools.reduce(lambda acc, layer: layer.output(acc), layers, x)
+    return functools.reduce(lambda accum_value, layer: layer.output(accum_value,dropout), layers, x)
 
 def iterations_shim(train, iterations):
     ''' Repeat calls to this function '''
@@ -90,12 +90,12 @@ def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequ
 class Transformer(object):
 
     #__slots__ save memory by allocating memory only to the varibles defined in the list
-    __slots__ = ['layers','arcs', '_x','_y','_logger','use_error']
+    __slots__ = ['layers','arcs', '_sym_x', '_sym_y','_logger','use_error']
 
     def __init__(self,layers, arcs, use_error):
         self.layers = layers
-        self._x = None
-        self._y = None
+        self._sym_x = None
+        self._sym_y = None
         self._logger = None
         self.arcs = arcs
         self.use_error = use_error
@@ -113,8 +113,8 @@ class Transformer(object):
         '''
         idx = T.iscalar('idx')
         given = {
-            self._x : transformed_x(x[idx * batch_size : (idx + 1) * batch_size]),
-            self._y : y[idx * batch_size : (idx + 1) * batch_size]
+            self._sym_x : transformed_x(x[idx * batch_size : (idx + 1) * batch_size]),
+            self._sym_y : y[idx * batch_size : (idx + 1) * batch_size]
         }
 
         return theano.function(inputs=[idx],outputs=output, updates=updates, givens=given, on_unused_input='warn')
@@ -176,9 +176,10 @@ class DeepAutoencoder(Transformer):
         self.weight_regularizer = None
 
     def process(self, x, y):
-        self._x = x
-        self._y = y
+        self._sym_x = x
+        self._sym_y = y
 
+        print('process autoencoder')
         # encoding input
         for layer in self.layers:
             W, b_prime = layer.W, layer.b_prime
@@ -186,9 +187,9 @@ class DeepAutoencoder(Transformer):
             #if rng is specified corrupt the inputs
             if self._rng:
                 x_tilde = self._rng.binomial(size=(x.shape[0], x.shape[1]), n=1,  p=(1 - self._corr_level), dtype=theano.config.floatX) * x
-                y = layer.output(x_tilde)
+                y = layer.output(x_tilde,dropout=False)
             else:
-                y = layer.output(x)
+                y = layer.output(x,dropout=False)
                 # z = T.nnet.sigmoid(T.dot(y, W.T) + b_prime) (This is required for regularization)
 
             x = y
@@ -211,7 +212,7 @@ class DeepAutoencoder(Transformer):
         # costs
         # cost vector seems to hold the reconstruction error for each training case.
         # this is required for getting inputs with reconstruction error higher than average
-        self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
+        self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._sym_x),axis=1)
 
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
         self.cost_before_reg = T.mean(self.cost_vector)
@@ -227,7 +228,7 @@ class DeepAutoencoder(Transformer):
 
         nnlayer = self.layers[arc]
         # clone is used to substitute a computational subgraph
-        transformed_cost = theano.clone(self.cost, replace={self._x : transformed_x(self._x)})
+        transformed_cost = theano.clone(self.cost, replace={self._sym_x : transformed_x(self._sym_x)})
 
         # update only a set of neurons specified by index
         updates = [
@@ -237,7 +238,7 @@ class DeepAutoencoder(Transformer):
         ]
 
         idx = T.iscalar('idx')
-        givens = {self._x: x[idx * batch_size:(idx+1) * batch_size]}
+        givens = {self._sym_x: x[idx * batch_size:(idx+1) * batch_size]}
 
         # using on_unused_inputs warn because, selected neurons could be "not depending on all the weights"
         # all the weights are a part of the cost. So it give an error otherwise
@@ -257,7 +258,7 @@ class DeepAutoencoder(Transformer):
         '''
         # sort the values by cost and get the top half of it (above average error)
         indexes = T.argsort(self.cost_vector)[(self.cost_vector.shape[0] // 2):]
-        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], updates=None, transformed_x=transformed_x)
+        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._sym_x[indexes], self._sym_y[indexes]], updates=None, transformed_x=transformed_x)
 
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
@@ -266,8 +267,8 @@ class StackedAutoencoder(Transformer):
         self._autoencoders = [DeepAutoencoder([layer], corruption_level, rng) for layer in layers]
 
     def process(self, x, y):
-        self._x = x
-        self._y = y
+        self._sym_x = x
+        self._sym_y = y
 
         for autoencoder in self._autoencoders:
             autoencoder.process(x,y)
@@ -289,22 +290,23 @@ class Softmax(Transformer):
         self.cost_vector = None
         self.cost = None
         self.iterations = iterations
-        self.last_out = None
         self.p_y_given_x = None
         self.y_mat = None
 
-    def process(self, x, y):
-        self._x = x
-        self._y = y
+    def process(self, x, y,dropout):
+        self._sym_x = x
+        self._sym_y = y
+        # dropout is not applied to softmax layer
+        #dropout will not be used in test
+        softmax_input = chained_output(self.layers[:-1], x,dropout)
+        self.p_y_given_x_train = T.nnet.softmax(chained_output([self.layers[-1]], softmax_input,False))
+        self.p_y_given_x_test = T.nnet.softmax(chained_output(self.layers, x,False))
 
-        self.last_out = chained_output(self.layers, x);
-        self.p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
-
-        self.results = T.argmax(self.p_y_given_x, axis=1)
+        self.results = T.argmax(self.p_y_given_x_test, axis=1)
 
         self.theta = [param for layer in self.layers for param in [layer.W, layer.b]]
         self._errors = T.mean(T.neq(self.results,y))
-        self.cost_vector = -T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]
+        self.cost_vector = -T.log(self.p_y_given_x_train)[T.arange(y.shape[0]), y]
         self.cost = T.mean(self.cost_vector)
 
         return None
@@ -312,14 +314,14 @@ class Softmax(Transformer):
     def get_y_as_vec_func(self, y,batch_size):
 
         self.y_mat = theano.shared(np.zeros((batch_size,10),dtype=theano.config.floatX))
-        one_vec = T.ones_like(self._y)
+        one_vec = T.ones_like(self._sym_y)
 
         idx = T.iscalar('idx')
 
-        y_mat_update = [(self.y_mat, T.inc_subtensor(self.y_mat[T.arange(self._y.shape[0]), self._y],1))]
+        y_mat_update = [(self.y_mat, T.inc_subtensor(self.y_mat[T.arange(self._sym_y.shape[0]), self._sym_y],1))]
 
         given = {
-            self._y : y[idx * batch_size : (idx + 1) * batch_size]
+            self._sym_y : y[idx * batch_size : (idx + 1) * batch_size]
         }
 
         return theano.function(inputs=[idx],outputs=[], updates=y_mat_update, givens=given, on_unused_input='warn')
@@ -367,10 +369,10 @@ class Softmax(Transformer):
         return self.make_func(x,y,batch_size,self._errors,None, transformed_x)
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
-        return self.make_func(x,y,batch_size,[self._y,self.results],None, transformed_x)
+        return self.make_func(x,y,batch_size,[self._sym_y,self.results],None, transformed_x)
 
     def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
-        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+        return self.make_func(x, y, batch_size, self._sym_y, None, transformed_x)
 
 class Pool(object):
 
@@ -454,9 +456,9 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         self._error_log = []
 
-    def process(self, x, y):
-        self._x = x
-        self._y = y
+    def process(self, x, y,dropout):
+        self._sym_x = x
+        self._sym_y = y
 
         self._autoencoder.process(x,y)
         self._softmax.process(x,y)
@@ -500,7 +502,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
         return self._softmax.error_func(arc, x, y, batch_size)
 
     def get_y_labels(self, arc, x, y, batch_size, transformed_x = identity):
-        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+        return self.make_func(x, y, batch_size, self._sym_y, None, transformed_x)
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
@@ -521,12 +523,12 @@ class MergeIncrementingAutoencoder(Transformer):
         self.iterations = iterations
         self.rng = np.random.RandomState(0)
 
-    def process(self, x, y):
-        self._x = x
-        self._y = y
+    def process(self, x, y,dropout):
+        self._sym_x = x
+        self._sym_y = y
         self._autoencoder.process(x,y)
-        self._softmax.process(x,y)
-        self._combined_objective.process(x,y)
+        self._softmax.process(x,y,dropout)
+        self._combined_objective.process(x,y,dropout)
         for ae in self._layered_autoencoders:
             ae.process(x,y)
 
@@ -550,7 +552,7 @@ class MergeIncrementingAutoencoder(Transformer):
         score_merges = theano.function([m], m_ranks)
 
         # greedy layer-wise training
-        layer_greedy = [ae.indexed_train_func(0, learning_rate, x, batch_size, lambda  x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders)]
+        #layer_greedy = [ae.indexed_train_func(0, learning_rate, x, batch_size, lambda  x, j=i: chained_output(self.layers[:j], x,dropout=False)) for i, ae in enumerate(self._layered_autoencoders)]
         # fintune is done by optimizing cross-entropy between x and reconstructed_x
         finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         # actual fine tuning using softmax error + reconstruction error
@@ -586,8 +588,8 @@ class MergeIncrementingAutoencoder(Transformer):
         idx = T.iscalar('idx')
 
         given = {
-            self._x : x[idx*batch_size : (idx+1) * batch_size],
-            self._y : y[idx*batch_size : (idx+1) * batch_size]
+            self._sym_x : x[idx*batch_size : (idx+1) * batch_size],
+            self._sym_y : y[idx*batch_size : (idx+1) * batch_size]
         }
 
         mi_train = theano.function([idx, self.layers[0].idx], mi_cost, updates=mi_updates, givens=given)
@@ -737,21 +739,25 @@ class CombinedObjective(Transformer):
         self.iterations = iterations
         self.cost = None
 
-    def process(self, x, yy):
-        self._x = x
-        self._y = yy
+    def process(self, x, yy,dropout):
+        self._sym_x = x
+        self._sym_y = yy
 
         self._autoencoder.process(x,yy)
-        self._softmax.process(x,yy)
+        self._softmax.process(x,yy,dropout)
 
         self.cost = self._softmax.cost + self.lam * self._autoencoder.cost
 
     def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations=None):
 
+        # hidden layer output method needs to be called for every batch because the mask need to change every batch
+        softmax_input = chained_output(self.layers[:-1], self._sym_x,dropout=True)
+        self._softmax.p_y_given_x_train = T.nnet.softmax(chained_output([self.layers[-1]], softmax_input,dropout=False))
+
+
+
         if iterations is None:
             iterations = self.iterations
-
-        #combined_cost = self._softmax.cost + self.lam * 0.5
 
         theta = []
         for layer in self.layers[:-1]:
@@ -759,8 +765,12 @@ class CombinedObjective(Transformer):
         theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
 
         update = [(param, param - learning_rate * grad) for param, grad in zip(theta, T.grad(self.cost,wrt=theta))]
+
         comb_obj_finetune_func = self.make_func(x, y, batch_size, self.cost, update, transformed_x)
         return iterations_shim(comb_obj_finetune_func, iterations)
+
+    def show_out_func(self,arc, lr, x,y, batch_size, transformed_x):
+        return [self.make_func(x,y,batch_size,layer.output_val,None) for layer in self.layers]
 
     def train_with_early_stop_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
         if iterations is None:
@@ -809,7 +819,7 @@ class CombinedObjective(Transformer):
         return self._softmax.error_func(arc, x, y, batch_size, transformed_x)
 
     def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
-        return self.make_func(x, y, batch_size, self._y, None, transformed_x)
+        return self.make_func(x, y, batch_size, self._sym_y, None, transformed_x)
 
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
@@ -850,12 +860,12 @@ class DeepReinforcementLearningModel(Transformer):
 
         self.neuron_balance = 1
 
-    def process(self, x, y):
-        self._x = x
-        self._y = y
+    def process(self, x, y, dropout):
+        self._sym_x = x
+        self._sym_y = y
         self._autoencoder.process(x, y)
-        self._softmax.process(x, y)
-        self._merge_increment.process(x, y)
+        self._softmax.process(x, y,dropout)
+        self._merge_increment.process(x, y,dropout)
 
     # add_from_shared uses a queue like adding mechanism, which means everything before is deleted
     # if it run out of space
@@ -954,6 +964,7 @@ class DeepReinforcementLearningModel(Transformer):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
 
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
+        #out_funcs = self._softmax.show_out_func(arc, learning_rate,x,y,batch_size,apply_x) #this was to check dropout masking
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
@@ -1095,9 +1106,9 @@ class MergeIncDAE(Transformer):
         self.total_err = 0.
         #self.total_merge = 0.
 
-    def process(self, x, y):
-        self._x = x
-        self._y = y
+    def process(self, x, y,dropout):
+        self._sym_x = x
+        self._sym_y = y
         self._autoencoder.process(x, y)
         self._softmax.process(x, y)
         self._merge_increment.process(x, y)

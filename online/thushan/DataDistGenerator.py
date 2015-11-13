@@ -93,28 +93,32 @@ def svhn_load():
     valid_name = 'svhn_train_32x32.mat'
     test_name = 'svhn_test_32x32.mat'
 
-    train_x = []
-    train_y = []
-
     data = sio.loadmat('data' + os.sep +train_name)
     train_x = data['X']
-    train_y = data['y']
+    # replacing label 10 with 0
+    train_y = [ele[0] if ele<10 else 0 for ele in data['y']]
 
     res_train_x  = np.swapaxes(train_x,0,1).T.reshape((-1,3072),order='C')/255.
-    create_image_from_vector(res_train_x[534,:],'svhn','rgb')
+    #create_image_from_vector(res_train_x[534,:],'svhn','rgb')
     train_set = [res_train_x,train_y]
 
-    f = open('data' + os.sep +valid_name, 'rb')
-    dict = pickle.load(f,encoding='latin1')
-    valid_set = [dict.get('data')/255.,dict.get('labels')]
+    vdata = sio.loadmat('data' + os.sep +valid_name)
+    valid_x = vdata['X']
+    valid_y = [ele[0] for ele in vdata['y']]
 
-    f = open('data' + os.sep +test_name, 'rb')
-    dict = pickle.load(f,encoding='latin1')
-    test_set = [dict.get('data')/255.,dict.get('labels')]
+    res_valid_x  = np.swapaxes(valid_x,0,1).T.reshape((-1,3072),order='C')/255.
+    #create_image_from_vector(res_train_x[534,:],'svhn','rgb')
+    valid_set = [res_valid_x,valid_y]
 
-    f.close()
+    testdata = sio.loadmat('data' + os.sep +test_name)
+    test_x = testdata['X']
+    test_y = [ele[0] for ele in testdata['y']]
 
-    all_data = [(np.asarray(train_x),np.asarray(train_y)),(valid_set[0],valid_set[1]),(test_set[0],test_set[1])]
+    res_test_x  = np.swapaxes(test_x,0,1).T.reshape((-1,3072),order='C')/255.
+    #create_image_from_vector(res_train_x[534,:],'svhn','rgb')
+    test_set = [res_test_x,test_y]
+
+    all_data = [(train_set[0],train_set[1]),(valid_set[0],valid_set[1]),(test_set[0],test_set[1])]
 
     return all_data
 
@@ -140,12 +144,13 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
 
     data = defaultdict(list)
 
-    data_x, data_y = valid
+    data_x, data_y = train
 
     # sort the data into bins depending on labels
     for i in range(data_x.shape[0]):
         data[data_y[i]].append(data_x[i])
 
+    print(list(data.keys()))
     # randomly sample a GP
     def kernel(a, b):
         """ Squared exponential kernel """
@@ -163,12 +168,11 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
     f_prior = f_prior ** math.ceil(math.sqrt(len(data)))
     f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
 
-
-
     fp = np.memmap(filename='data'+os.sep+file_name + '.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
+            print('label ',label,' size ',len(data[label]))
             example = random.choice(data[label])
             example_before = example.copy()
             if effect == 'noise':
@@ -252,7 +256,7 @@ if __name__ == '__main__':
     seed = 12
 
     elements = 1000000
-    granularity = 100
+    granularity = 1000
     effects = 'noise'
     row_count=1000
 
