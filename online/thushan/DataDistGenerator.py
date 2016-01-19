@@ -136,8 +136,6 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
         train, valid, _ = cifar_10_load()
     elif dataset == 'cifar_100':
         train, valid, _ = cifar_100_load()
-    elif dataset == 'svhn':
-        train, valid, _ = svhn_load()
 
     np.random.seed(seed)
     random.seed(seed)
@@ -233,21 +231,16 @@ def retrive_data(file_name, col_count,dataset):
 
     create_image_from_vector(data_new[980,:-1],dataset)
 
-def create_image_from_vector(vec, dataset,type='bw'):
+def create_image_from_vector(vec, dataset):
     if dataset == 'mnist':
         from pylab import imshow,show,cm
         imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
         show()
-    elif dataset == 'cifar_10' or dataset=='cifar_100' or dataset=='svhn':
+    elif dataset == 'cifar_10' or dataset=='cifar_100':
         import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
-        if type=='rgb':
-            rgb_vec = [np.reshape(vec[0:1024],(-1,32)),np.reshape(vec[1024:2048],(-1,32)),np.reshape(vec[2048:3072],(-1,32))]
-            plt.imshow(np.transpose(np.asarray(rgb_vec),axes=(1,2,0)))
-        else:
-            new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
-            plt.imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
-
+        new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
+        rgb_vec = [np.reshape(vec[0:1024],(-1,32)),np.reshape(vec[1024:2048],(-1,32)),np.reshape(vec[2048:3072],(-1,32))]
+        plt.imshow(np.transpose(np.asarray(rgb_vec),axes=(1,2,0)))
         plt.axis('off')
         plt.show()
 if __name__ == '__main__':
@@ -261,7 +254,7 @@ if __name__ == '__main__':
     row_count=1000
 
 
-    dataset = 'svhn'
+    dataset = 'cifar_10'
 
     if dataset == 'mnist':
         file_name = 'mnist_non_station_1000000'
@@ -275,13 +268,10 @@ if __name__ == '__main__':
         file_name = 'cifar_100_non_station_1000000'
         col_count = 3072+1
         label_count = 100
-    elif dataset == 'svhn':
-        file_name = 'svhn_non_station_1000000'
-        col_count = 3072+1
-        label_count = 10
 
-    main(dataset, col_count,file_name, elements, granularity,effects,seed)
+
+    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
     #retrive_data(file_name,col_count, dataset)
 
-    #write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
+    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
     print('done...')

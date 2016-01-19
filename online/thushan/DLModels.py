@@ -1102,7 +1102,7 @@ class MergeIncDAE(Transformer):
         self._neuron_balance_log = []
         self._network_size_log = []
 
-        self._inc_log = [0.05]
+        self._inc_log = [20]
         self.total_err = 0.
         #self.total_merge = 0.
 
@@ -1180,7 +1180,7 @@ class MergeIncDAE(Transformer):
                     print('Curr Err: ', curr_err, ' Prev Err: ',prev_err)
                     if (curr_err/prev_err) < 1. - eps1:
                         print('e ratio < 1-eps',curr_err/prev_err,' ',1-eps1)
-                        inc = self._inc_log[-1] + 1.1/self.layers[1].W.get_value().shape[0]
+                        inc = self._inc_log[-1] + 1
                     elif (curr_err/prev_err) > 1. - eps2:
                         print('e ratio > 1-eps',curr_err/prev_err,' ',1-eps2)
                         inc = self._inc_log[-1]/2.
@@ -1191,9 +1191,11 @@ class MergeIncDAE(Transformer):
                     print('Inc Log: ',self._inc_log)
                 else:
                     inc = self._inc_log[-1]
+
+                inc_precentage = inc/self.layers[1].W.get_value().shape[0]
                 print('Total inc: ', inc, ' Total merge: ', 0.5*inc)
 
-                merge_inc_func_hard_pool(pool_indexes, 0.5*inc, inc)
+                merge_inc_func_hard_pool(pool_indexes, 0.5*inc_precentage, inc_precentage)
                 self._hard_pool.clear()
 
             for _ in range(int(self.iterations)):

@@ -8,7 +8,6 @@
 *.pkl
 *.bin
 *.csv
-*.mat
 .ipython/
 .idea/
 Data/
