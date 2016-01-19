@@ -3,6 +3,7 @@
 *.jpg
 *.dat
 *.pyc
+*.mat
 *.tar.gz
 *.tar
 *.pkl

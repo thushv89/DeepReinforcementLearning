@@ -63,7 +63,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size,dropout):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -78,7 +78,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_le
     elif model_type == 'MergeInc':
         model = DLModels.MergeIncDAE(layers, corruption_level, rng, iterations, lam, batch_size, pool_size)
 
-    model.process(T.matrix('x'), T.ivector('y'),dropout)
+    model.process(T.matrix('x'), T.ivector('y'))
 
     return model
 
@@ -389,20 +389,20 @@ def run():
             if opt == '--suffix':
                 log_suffix = arg
 
-    dataset = 'cifar-10'
+    dataset = 'mnist'
     turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
-    in_size = 3072
+    in_size = 784
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'DeepRL'
+    modelType = 'MergeInc'
 
     learning_rate = 0.1
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [512,512]
+    hid_sizes = [500,500]
 
     corruption_level = 0.2
     lam = 0.1
@@ -433,7 +433,7 @@ def run():
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
         reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
         error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size,dropout=True)
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
 
 
     model_info = '---------- Model Information -------------\n'
