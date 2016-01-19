@@ -129,17 +129,27 @@ class ContinuousState(Controller):
         #to_move = (data['initial_size'] * 0.1) / (data['initial_size'] * data['neuron_balance'])
         #to_move = 0.25 * np.exp(-(data['neuron_balance']-1.)**2/2.) * (1. + err_diff) * (1. + curr_err)
         # newer to_move eqn
-        to_move = np.exp(-(data['neuron_balance']-1.)**2/5.) * np.abs(err_diff)
+        if random.random() > 0.1:
+            to_move = np.exp(-(data['neuron_balance']-1.)**2/5.) * np.abs(err_diff)
+        else:
+            to_move = np.exp(-(data['neuron_balance']-1.)**2/5.) * np.abs(err_diff) * (1.+curr_err)
+
         print('To move: ', to_move)
 
-        if action == self.Action.pool:
-            funcs['pool'](1)
-        elif action == self.Action.reduce:
-            # method signature: amount, to_merge, to_inc
-            # introducing division by two to reduce the impact
-            funcs['merge_increment_pool'](data['pool_relevant'], to_move/2., 0)
-        elif action == self.Action.increment:
-            funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)
+        if to_move<1./data['initial_size']:
+            print('To move is too small')
+            funcs['pool_finetune'](1)
+            action = self.Action.pool
+            
+        else:
+            if action == self.Action.pool:
+                funcs['pool_finetune'](1)
+            elif action == self.Action.reduce:
+                # method signature: amount, to_merge, to_inc
+                # introducing division by two to reduce the impact
+                funcs['merge_increment_pool'](data['pool_relevant'], to_move/2., 0)
+            elif action == self.Action.increment:
+                funcs['merge_increment_pool'](data['pool_relevant'], 0, to_move)
 
         self.prev_action = action
         self.prev_state = state

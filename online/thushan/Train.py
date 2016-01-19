@@ -14,15 +14,19 @@ import logging
 import numpy as np
 import time
 
-def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0):
+def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0,turn_bw=False):
     '''' Load data into shared variables '''
-
+    if turn_bw:
+        dims = batch_x.shape[1]
+        bw_data = 0.2989*batch_x[:,0:dims/3] + 0.5870 * batch_x[:,dims/3:(2*dims)/3] + 0.1140 * batch_x[:,(dims*2)/3:dims]
+        batch_x = bw_data
 
     if not normalize:
         x_shared = theano.shared(batch_x, name + '_x_pkl')
     else:
         x_shared = theano.shared(batch_x, name + '_x_pkl')/normalize_thresh
-    assert 0.004<=np.max(x_shared.eval())<=1.
+    max_val = np.max(x_shared.eval())
+    assert 0.004<=max_val<=1.
     y_shared = T.cast(theano.shared(batch_y.astype(theano.config.floatX), name + '_y_pkl'), 'int32')
     size = batch_x.shape[0]
 
@@ -39,11 +43,21 @@ def load_from_pickle(filename):
 
         return train, valid, test
 
-def load_from_memmap(filename, row_count, col_count, start_row):
+def load_from_memmap(filename, row_count, in_size, start_row,turn_bw):
+    if turn_bw:
+        col_count = in_size*3 + 1
+    else:
+        col_count = in_size + 1
 
     fp = np.memmap(filename,dtype=np.float32,mode='r',offset=np.dtype('float32').itemsize*col_count*start_row,shape=(row_count,col_count))
     data = np.empty((row_count,col_count),dtype=np.float32)
     data[:] = fp[:]
+
+    if turn_bw:
+        #0.2989 * R + 0.5870 * G + 0.1140 * B
+        bw_data = 0.2989*data[:,0:(col_count-1)/3] + 0.5870 * data[:,(col_count-1)/3:(2*(col_count-1))/3] + 0.1140 * data[:,((col_count-1)*2)/3:(col_count-1)]
+        data_y = np.asarray([data[:,-1]]).reshape((row_count,1))
+        data = np.concatenate((bw_data,data_y),1)
 
     test_labesl = data[:,-1]
 
@@ -93,12 +107,15 @@ def format_array_to_print(arr, num_ele=5):
 
     return s
 
-def create_image_from_vector(vec, dataset):
+def create_image_from_vector(vec, dataset,turn_bw):
     from pylab import imshow,show,cm
     if dataset == 'mnist':
         imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
     elif dataset == 'cifar-10':
-        new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
+        if not turn_bw:
+            new_vec = 0.2989 * vec[0:1024] + 0.5870 * vec[1024:2048] + 0.1140 * vec[2048:3072]
+        else:
+            new_vec = vec
         imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
     show()
 
@@ -321,7 +338,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, pr
 
     for arc in range(model.arcs):
 
-        train_mergeinc = model.train_func(arc, learning_rate, data_file[0], data_file[1], batch_size, False, None, None)
+        train_mergeinc = model.train_func(arc, learning_rate, data_file[0], data_file[1], next_data_file[0], next_data_file[1], batch_size)
 
         results_func = model.error_func
         test_func = results_func(arc, test_file[0], test_file[1], batch_size)
@@ -397,12 +414,12 @@ def run():
     learnMode = 'online'
     modelType = 'MergeInc'
 
-    learning_rate = 0.1
+    learning_rate = 0.2
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [500,500]
+    hid_sizes = [500]
 
     corruption_level = 0.2
     lam = 0.1
@@ -426,12 +443,12 @@ def run():
 
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
+    reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
 
-    network_size_logger, reconstruction_err_logger, error_logger = None, None, None
+    network_size_logger, error_logger = None, None
 
     if modelType == 'DeepRL' or modelType == 'MergeInc':
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-        reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
         error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
 
@@ -460,10 +477,14 @@ def run():
 
         if dataset == 'mnist':
             _, _, test_file = load_from_pickle('data' + os.sep + 'mnist.pkl')
+        elif dataset == 'mnist-var':
+            f = open('data'+os.sep+'mnist_rot_back_test.pkl','rb')
+            test_x,test_y = pickle.load(f,encoding='latin1')
+            test_file = make_shared(test_x,test_y,'test',False,1.0,turn_bw)
         elif dataset == 'cifar-10':
             f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
-            test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0)
+            test_file = make_shared(np.asarray(dict.get('data'), dtype=np.float32), np.asarray(dict.get('labels'), dtype=np.float32), 'test', True, 255.0, turn_bw)
         elif dataset == 'cifar-100':
             f = open('data' + os.sep + 'cifar_100_test_batch', 'rb')
             dict = pickle.load(f,encoding='latin1')
@@ -476,8 +497,6 @@ def run():
             res_test_x  = np.swapaxes(test_x,0,1).T.reshape((-1,3072),order='C')
             test_file = make_shared(np.asarray(res_test_x, dtype=np.float32), np.asarray(test_y, dtype=np.float32), 'test', True, 255.0, turn_bw)
 
-
-        col_count = in_size + 1
         validation_errors = []
         mean_test_errors  = []
         curr_data_file = None
@@ -486,13 +505,16 @@ def run():
             v_err,test_err = None,None
             print('\n------------------------ New Distribution(', i,') --------------------------\n')
             if dataset == 'mnist':
-                next_data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'mnist_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,False)
+                valid_file = [None,None]
+            elif dataset == 'mnist-var':
+                next_data_file = load_from_memmap('data'+os.sep + 'mnist_rot_back_non_station_1000000.pkl',online_train_row_count,in_size,i*online_train_row_count,False)
                 valid_file = [None,None]
             elif dataset == 'cifar-10':
-                next_data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'cifar_10_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
                 valid_file = [None,None]
             elif dataset == 'cifar-100':
-                next_data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,col_count,i * online_train_row_count)
+                next_data_file = load_from_memmap('data' + os.sep + 'cifar_100_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
                 valid_file = [None,None]
             elif dataset == 'svhn':
                 next_data_file = load_from_memmap('data' + os.sep + 'svhn_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
@@ -516,16 +538,17 @@ def run():
 
             if (i+1) % 100 == 0:
                 valid_logger.info(validation_errors)
+                test_logger.info(list(mean_test_errors))
+                reconstruction_err_logger.info(list(np.asarray(model._reconstruction_log)[:]))
 
             curr_data_file = next_data_file
 
         if modelType == 'DeepRL' or modelType == 'MergeInc':
-            rec_log_arr = np.asarray(model._reconstruction_log).reshape(-1,len(model._reconstruction_log))
             err_log_arr = np.asarray(model._error_log).reshape(-1,len(model._error_log))
-            for rec_i in range(rec_log_arr.shape[0]):
-                reconstruction_err_logger.info(list(rec_log_arr[rec_i]))
-                error_logger.info(list(err_log_arr[rec_i]))
 
+
+        rec_log_arr = np.asarray(model._reconstruction_log)
+        reconstruction_err_logger.info(list(rec_log_arr[:]))
         valid_logger.info(validation_errors)
         test_logger.info(list(mean_test_errors))
     else:
@@ -559,6 +582,8 @@ def run():
             test_file = make_shared(np.asarray(dict.get('data'),dtype=theano.config.floatX),np.asarray(dict.get('labels'),dtype=theano.config.floatX),'test',True, 255.)
 
             f.close()
+
+
 
         if not modelType == 'MergeInc':
             v_err,test_err = train_validate_and_test_v2(batch_size, data_file, pre_epochs, finetune_epochs, learning_rate, model, modelType, valid_file, test_file, early_stop, network_size_logger)

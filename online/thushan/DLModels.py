@@ -170,7 +170,6 @@ class DeepAutoencoder(Transformer):
 
         self.theta = None
         self.cost = None
-        self.cost_before_reg = None
         # Need to find out what cost_vector is used for...
         self.cost_vector = None
         self.weight_regularizer = None
@@ -214,14 +213,13 @@ class DeepAutoencoder(Transformer):
         self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
 
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
-        self.cost_before_reg = T.mean(self.cost_vector)
         self.cost = T.mean(self.cost_vector) + (self.lam * self.weight_regularizer)
 
         return None
 
     def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=[self.cost,self.cost_before_reg], updates=updates, transformed_x=transformed_x)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=updates, transformed_x=transformed_x)
 
     def indexed_train_func(self, arc, learning_rate, x, batch_size, transformed_x):
 
@@ -398,6 +396,22 @@ class Pool(object):
         # function to update the data and data_y
         self._update = theano.function([pos, x, y], updates=update)
 
+    def remove(self, idx, batch_size):
+        print('Pool: pool size: ',self.size)
+        print('removing batch at ', idx, ' from pool')
+        pool_indexes = self.as_size(self.size,batch_size)
+        print('Pool: pool indexes ', pool_indexes)
+        print('Pool: max idx: ', np.max(pool_indexes))
+        for i in range(idx,np.max(pool_indexes)):
+            print('replacing data at ', i, ' with data at ', (i+1))
+            T.set_subtensor(self.data[i*batch_size:(i)*batch_size],self.data[(i+1)*batch_size:(i+1)*batch_size])
+            T.set_subtensor(self.data_y[i*batch_size:(i)*batch_size],self.data_y[(i+1)*batch_size:(i+1)*batch_size])
+
+        print('The position was at ', self.position)
+        self.position = self.position - batch_size
+        print('Now the position at ', self.position)
+        self.size = self.position
+
     def add(self, x, y, rows=None):
 
         if not rows:
@@ -438,7 +452,7 @@ class Pool(object):
 
 class StackedAutoencoderWithSoftmax(Transformer):
 
-    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log']
+    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log','_reconstruction_log']
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
         super().__init__(layers, 1, True)
@@ -453,6 +467,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
         self.rng = np.random.RandomState(0)
 
         self._error_log = []
+        self._reconstruction_log = []
 
     def process(self, x, y):
         self._x = x
@@ -469,6 +484,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         error_func = self.error_func(arc, x, y, batch_size, transformed_x)
+        reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, transformed_x)
 
         if early_stopping:
             softmax_train_func,softmax_finetune_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
@@ -479,12 +495,13 @@ class StackedAutoencoderWithSoftmax(Transformer):
             greedy_costs = []
             for i in range(len(self.layers)-1):
                 layer_greedy[i](int(batch_id))
-            pre_cost,pre_cost_b4_reg = ae_finetune_func(batch_id)
+            pre_cost = ae_finetune_func(batch_id)
             return pre_cost
 
         def finetune(batch_id):
             t_cost = softmax_train_func(batch_id)
             self._error_log.append(error_func(batch_id))
+            self._reconstruction_log.append(reconstruction_func(batch_id))
             return self._error_log[-1]
 
         def validate(batch_id):
@@ -720,8 +737,10 @@ class MergeIncrementingAutoencoder(Transformer):
                     for i in pool_indexes:
                         mi_train(i, empty_slots)
 
-            for i in pool_indexes:
-                combined_objective_tune(i)
+            #for i in pool_indexes:
+            #    combined_objective_tune(i)
+
+
 
         return merge_model
 
@@ -870,11 +889,20 @@ class DeepReinforcementLearningModel(Transformer):
         return update_pools
 
     def pool_if_different(self, pool, pool_dist, batch_id, current, batch_size,x, y):
+
         print('Pool if different ...')
+        print('pool_if_different: pool size: ',pool.size)
         def magnitude(x):
             '''  returns sqrt(sum(v(i)^2)) '''
-            return sum((v **2 for v in x.values() )) ** 0.5
+            return sum((v **2 for v in x.values())) ** 0.5
 
+        #this method works as follows. Assum a 3 label case
+        #say x = '0':5, '1':5
+        #say y = '0':2, '1':3, '2':5
+        #then the calculation is as follows
+        #for every label that is in either x or y (i.e. '0','1','2')
+        #xval,yval = that val if it exist else 0
+        #top accumulate xval*yval
         def compare(x,y):
             '''  Calculate Cosine similarity between x and y '''
             top = 0
@@ -883,26 +911,47 @@ class DeepReinforcementLearningModel(Transformer):
                 xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
                 top += xval * yval
 
-            return top / magnitude(x) * magnitude(y)
+            return top / (magnitude(x) * magnitude(y))
 
 
         # the below statement get the batch scores, batch scores are basically
         # the cosine distance between a given batch and the current batch (last)
         # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+        for k,v in current.items():
+            current[k]=v*batch_size
+        print('current dist: ', current)
+
         if len(pool_dist)>0:
+
+            print('pool dist: ')
+            for i,dist in enumerate(pool_dist):
+                print(i,': ',dist,'\n')
+
             batch_scores = [(i, compare(current, pool_dist[i])) for i in range(len(pool_dist))]
             # mean is the mean cosine score
             #mean = np.mean([ v[1] for v in batch_scores ])
+            print('Batch Scores ...')
             print(batch_scores)
             print('max simi: ', np.max([s[1] for s in batch_scores]))
-            if np.max([s[1] for s in batch_scores]) < 0.45:
+            if np.max([s[1] for s in batch_scores]) < 0.7:
                 print('added to pool', batch_id)
                 if len(pool_dist) == pool.max_size/batch_size:
                     pool_dist.pop(0)
                 pool_dist.append(current)
                 pool.add_from_shared(batch_id, batch_size, x, y)
+
+            '''#random batch switch
+            if np.max([s[1] for s in batch_scores]) > 0.99 and np.random.random()<0.1:
+                max_idx = np.argmax([s[1] for s in batch_scores])
+                print('random: removing batch at ', max_idx)
+                pool_dist.pop(max_idx)
+
+                pool.remove(max_idx,batch_size)
+                pool_dist.append(current)
+                pool.add_from_shared(batch_id,batch_size,x,y)'''
+
         else:
-            print('added to pool', batch_id)
+            print('pool is empty. added to pool', batch_id)
             pool_dist.append(current)
             pool.add_from_shared(batch_id, batch_size, x, y)
 
@@ -928,7 +977,7 @@ class DeepReinforcementLearningModel(Transformer):
                 xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
                 top += xval * yval
 
-            return top / magnitude(x) * magnitude(y)
+            return top / (magnitude(x) * magnitude(y))
 
         # score over batches for this pool
         # used to get only the distributions of the batches actually in the pool
@@ -937,6 +986,8 @@ class DeepReinforcementLearningModel(Transformer):
         # the below statement get the batch scores, batch scores are basically
         # the cosine distance between a given batch and the current batch (last)
         # for i in range(-1,-1 - batches_covered) gets the indexes as minus indices as it is easier way to count from back of array
+
+
         batch_scores = [(i % batches_covered, compare(current, distribution[i])) for i in range(-1,-1 - batches_covered)]
         # mean is the mean cosine score
         mean = np.mean([ v[1] for v in batch_scores ])
@@ -949,6 +1000,11 @@ class DeepReinforcementLearningModel(Transformer):
 
         return 1 - (last[0] / batches_covered)
 
+    def get_batch_count(self, data_y):
+        from collections import Counter
+        dist = Counter(data_y)
+        norm_dist = {str(k): v / sum(dist.values()) for k, v in dist.items()}
+        return norm_dist
 
     def train_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, apply_x=identity):
         batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
@@ -970,8 +1026,11 @@ class DeepReinforcementLearningModel(Transformer):
         train_func_diff_pool = self._softmax.train_func(arc, learning_rate, self._diff_pool.data, self._diff_pool.data_y, batch_size, apply_x)
 
         def train_pool(pool, pool_func, amount):
-
-            for i in pool.as_size(int(pool.size * amount), batch_size):
+            pool_indexes = pool.as_size(int(pool.size * amount), batch_size)
+            print('index before shuffle: ', pool_indexes)
+            np.random.shuffle(pool_indexes)
+            print('shuffled indexes are: ', pool_indexes)
+            for i in pool_indexes:
                 pool_func(i)
 
         def moving_average(log, n):
@@ -995,12 +1054,17 @@ class DeepReinforcementLearningModel(Transformer):
             self._pool.add_from_shared(batch_id, batch_size, x, y)
             self._hard_pool.add(*hard_examples_func(batch_id))
 
+            print('size before pool_if_diff: ',self._diff_pool.size)
+            self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1], batch_size, x, y)
+            print('size after pool_if_diff: ',self._diff_pool.size)
+
             data = {
                 'mea_30': moving_average(self._error_log, 30),
                 'mea_15': moving_average(self._error_log, 15),
                 'mea_5': moving_average(self._error_log, 5),
                 'pool_relevant': self.pool_relevant(self._pool,self.train_distribution,batch_size),
                 'initial_size': self.layers[1].initial_size[0],
+                'input_size':self.layers[0].initial_size[0],
                 'hard_pool_full': self._hard_pool.size == self._hard_pool.max_size,
                 'error_log': self._error_log,
                 'valid_error_log': self._valid_error_log,
@@ -1028,6 +1092,7 @@ class DeepReinforcementLearningModel(Transformer):
                 'merge_increment_pool' : functools.partial(merge_increment, merge_inc_func_pool, self._pool),
                 'merge_increment_hard_pool': functools.partial(merge_increment, merge_inc_func_hard_pool, self._hard_pool),
                 'pool': functools.partial(train_pool, self._pool, train_func_pool),
+                'pool_finetune':functools.partial(train_pool, self._diff_pool, train_func_diff_pool),
                 'hard_pool': functools.partial(train_pool, self._hard_pool, train_func_hard_pool),
                 'hard_pool_clear': self._hard_pool.clear,
             }
@@ -1037,10 +1102,6 @@ class DeepReinforcementLearningModel(Transformer):
 
             train_func(batch_id)
 
-            #print('Diff pool size: ',self._diff_pool.size)
-            #if(self._diff_pool.size/batch_size >= 5):
-            #    print('Train with Diff pool ...')
-            #    train_pool(self._diff_pool,train_func_diff_pool,1)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
             return self._valid_error_log[-1]
@@ -1126,7 +1187,7 @@ class MergeIncDAE(Transformer):
 
         def train_mergeinc(batch_id):
 
-            rec_err, rec_err_wo_reg = reconstruction_func(batch_id)
+            rec_err = reconstruction_func(batch_id)
             self._reconstruction_log.append(np.asscalar(rec_err))
             self._error_log.append(error_func(batch_id))
             self._valid_error_log.append(valid_error_func(batch_id))
@@ -1187,9 +1248,11 @@ class MergeIncDAE(Transformer):
                 merge_inc_func_hard_pool(pool_indexes, 0.5*inc_prec, inc_prec)
                 self._hard_pool.clear()
 
+            # generative error optimization
             for _ in range(int(self.iterations)):
                 ae_finetune_func(batch_id)
 
+            # discriminative error optimization
             train_func(batch_id)
 
             self._network_size_log.append(self.layers[0].W.get_value().shape[1])
