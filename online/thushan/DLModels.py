@@ -1243,7 +1243,7 @@ class MergeIncDAE(Transformer):
                     inc = self._inc_log[-1]
 
                 inc_prec = inc/self.layers[1].W.get_value().shape[0]
-                print('Total inc: ', inc, ' Total merge: ', 0.5*inc)
+                print('Total inc: ', inc_prec, ' Total merge: ', 0.5*inc_prec)
 
                 merge_inc_func_hard_pool(pool_indexes, 0.5*inc_prec, inc_prec)
                 self._hard_pool.clear()

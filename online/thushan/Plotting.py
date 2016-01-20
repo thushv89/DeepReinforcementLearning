@@ -37,7 +37,13 @@ for i in [0*6,2*6,4*6]:
         plt.plot(x_axis,all_data[i+j+2],'g',label=legends[2])
         plt.xlabel('Position in the Dataset')
         plt.title(chart_titles[int(i/3+j/3)])
-        legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
+        if str_subplot=='231':
+            legend = plt.legend(loc='top left', shadow=False, fontsize='small')
+        elif str_subplot=='232':
+            legend = plt.legend(loc='lower right', shadow=False, fontsize='small')
+        else:
+            legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
+
     i_idx += 1
 
 plt.figure(2)
