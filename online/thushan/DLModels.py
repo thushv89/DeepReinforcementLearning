@@ -213,7 +213,7 @@ class DeepAutoencoder(Transformer):
         self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x),axis=1)
 
         self.theta = [ param for layer in self.layers for param in [layer.W, layer.b, layer.b_prime]]
-        self.cost = T.mean(self.cost_vector) + (self.lam * self.weight_regularizer)
+        self.cost = T.mean(self.cost_vector)# + (self.lam * self.weight_regularizer)
 
         return None
 
@@ -452,7 +452,7 @@ class Pool(object):
 
 class StackedAutoencoderWithSoftmax(Transformer):
 
-    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log','_reconstruction_log']
+    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log','_reconstruction_log','_valid_error_log']
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
         super().__init__(layers, 1, True)
@@ -468,6 +468,7 @@ class StackedAutoencoderWithSoftmax(Transformer):
 
         self._error_log = []
         self._reconstruction_log = []
+        self._valid_error_log = []
 
     def process(self, x, y):
         self._x = x
@@ -479,36 +480,30 @@ class StackedAutoencoderWithSoftmax(Transformer):
         for ae in self._layered_autoencoders:
             ae.process(x, y)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size, early_stopping, v_x, v_y, transformed_x=identity):
+    def train_func(self, arc, learning_rate, x, y, v_x, v_y,batch_size, transformed_x=identity):
 
         layer_greedy = [ ae.train_func(arc, learning_rate, x,  y, batch_size, lambda x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders) ]
         ae_finetune_func = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
         error_func = self.error_func(arc, x, y, batch_size, transformed_x)
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, transformed_x)
 
-        if early_stopping:
-            softmax_train_func,softmax_finetune_func = self._softmax.train_with_early_stop_func_v2(0, learning_rate, x, y, v_x, v_y, batch_size, transformed_x)
-        else:
-            softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
-
+        softmax_train_func = self._softmax.train_func(0,learning_rate,x,y,batch_size)
+        valid_error_func = self.error_func(arc, v_x, v_y, batch_size, transformed_x)
         def pre_train(batch_id):
-            greedy_costs = []
-            for i in range(len(self.layers)-1):
-                layer_greedy[i](int(batch_id))
-            pre_cost = ae_finetune_func(batch_id)
+
+            for _ in range(int(self.iterations/2)):
+                for i in range(len(self.layers)-1):
+                    layer_greedy[i](int(batch_id))
+                pre_cost = ae_finetune_func(batch_id)
             return pre_cost
 
         def finetune(batch_id):
-            t_cost = softmax_train_func(batch_id)
-            self._error_log.append(error_func(batch_id))
+            softmax_train_func(batch_id)
+            self._valid_error_log.append(valid_error_func(batch_id))
             self._reconstruction_log.append(reconstruction_func(batch_id))
-            return self._error_log[-1]
+            return self._valid_error_log[-1]
 
-        def validate(batch_id):
-            f_cost = softmax_finetune_func(batch_id)
-            return f_cost
-
-        return [pre_train,finetune,validate]
+        return [pre_train,finetune]
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)
@@ -727,9 +722,6 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[1].W.set_value(last_layer_weights)
             self.layers[1].b_prime.set_value(last_layer_prime)
 
-            for _ in range(int(self.iterations)):
-                for i in pool_indexes:
-                    finetune(i)
 
             # finetune with supervised
             if empty_slots:
@@ -1152,7 +1144,7 @@ class MergeIncDAE(Transformer):
         self._neuron_balance_log = []
         self._network_size_log = []
 
-        self._inc_log = [20]
+        self._inc_log = [100]
         self.total_err = 0.
         #self.total_merge = 0.
 
@@ -1233,23 +1225,25 @@ class MergeIncDAE(Transformer):
                         inc = self._inc_log[-1] + 1.
                     elif (curr_err/prev_err) > 1. - eps2:
                         print('e ratio > 1-eps',curr_err/prev_err,' ',1-eps2)
-                        inc = self._inc_log[-1]/2.
+                        inc = self._inc_log[-1]/2
                     else:
                         inc = self._inc_log[-1]
 
-                    self._inc_log.append(inc)
+                    self._inc_log.append(int(inc))
                     print('Inc Log: ',self._inc_log)
                 else:
                     inc = self._inc_log[-1]
 
                 inc_prec = inc/self.layers[1].W.get_value().shape[0]
-                print('Total inc: ', inc_prec, ' Total merge: ', 0.5*inc_prec)
+                print('Total inc: ', inc_prec, ' Total merge: ', 0.2*inc_prec)
 
-                merge_inc_func_hard_pool(pool_indexes, 0.5*inc_prec, inc_prec)
+                merge_inc_func_hard_pool(pool_indexes, 0.2*inc_prec, inc_prec)
                 self._hard_pool.clear()
 
             # generative error optimization
             for _ in range(int(self.iterations)):
+                for i in range(len(self.layers)-1):
+                    layer_greedy[i](int(batch_id))
                 ae_finetune_func(batch_id)
 
             # discriminative error optimization

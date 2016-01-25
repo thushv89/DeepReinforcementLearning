@@ -122,7 +122,7 @@ def svhn_load():
 
     return all_data
 
-def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12):
+def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12, mode='gauss'):
 
     # seed the generator (Random num generators use pseudo-random sequences)
     # seed determines the starting position in that sequence for the random numbers
@@ -157,20 +157,25 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
 
     # number of samples
     n = math.ceil(elements / granularity)
-    Xtest = np.linspace(0, col_count, n).reshape(-1, 1)
-    L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
+    if mode=='gauss':
+        Xtest = np.linspace(0, col_count, n).reshape(-1, 1)
+        L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
 
-    # massage the data to get a good distribution
-    f_prior = np.dot(L, np.random.normal(size=(n, len(data))))
-    f_prior -= f_prior.min()
-    f_prior = f_prior ** math.ceil(math.sqrt(len(data)))
-    f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
+        # massage the data to get a good distribution
+        f_prior = np.dot(L, np.random.normal(size=(n, len(data))))
+        f_prior -= f_prior.min()
+        f_prior = f_prior ** math.ceil(math.sqrt(len(data)))
+        f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
+    elif mode=='uni':
+        f_prior = []
+        for i in range(n):
+            f_prior.append([1./len(data) for _ in range(len(data))])
 
     fp = np.memmap(filename='data'+os.sep+file_name + '.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
+    # f_prior is 'n' elements long. each of that has 'col_count' elements
     for i, dist in enumerate(f_prior):
         exampleList = []
         for label in distribute_as(dist, granularity):
-            print('label ',label,' size ',len(data[label]))
             example = random.choice(data[label])
             example_before = example.copy()
             if effect == 'noise':
@@ -179,7 +184,16 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
             exampleList.append(np.append(example,float(label)))
 
         print('done dist in prior',i, ' out of ', len(f_prior))
-        fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
+        chunk_size = np.min([10000,elements/granularity])
+        print('Breaking to small chunks for writing')
+        for j in range(0,int((elements/granularity)/chunk_size)):
+            pos_1 = int((i*granularity)+(j*chunk_size))
+            pos_2 = int((i*granularity)+((j+1)*chunk_size))
+            #fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
+            fp[pos_1:pos_2,:] = exampleList[int(j*chunk_size):int((j+1)*chunk_size)]
+            print('\t\tChunk ',j,' ...')
+            print('\t\tWriting to: ',pos_1,':',pos_2)
+            print('\t\tReading from: ',j*chunk_size,':',(j+1)*chunk_size)
 
     del fp # includes flushing
 
@@ -212,7 +226,7 @@ def write_data_distribution(filename, col_count, row_count, row_total, label_cou
             ordered_dist_i.append(dist_i[str(k)] if str(k) in dist_i else 0)
         ordered_dist.append(ordered_dist_i)
 
-    with open('label_dist_cifar_100.csv', 'w',newline='') as f:
+    with open('label_dist_'+file_name+'.csv', 'w',newline='') as f:
         writer = csv.writer(f)
         for i in ordered_dist:
             writer.writerow([val for val in i])
@@ -250,27 +264,26 @@ if __name__ == '__main__':
 
     elements = 1000000
     granularity = 1000
+    suffix = 'station'
+    dataset = 'cifar_10'
+
     effects = 'noise'
     row_count=1000
 
-
-    dataset = 'cifar_10'
+    file_name = dataset + '_'+ suffix + '_'+str(elements)
 
     if dataset == 'mnist':
-        file_name = 'mnist_non_station_1000000'
         col_count = 784+1
         label_count = 10
     elif dataset == 'cifar_10':
-        file_name = 'cifar_10_non_station_1000000'
         col_count = 3072+1
         label_count = 10
     elif dataset == 'cifar_100':
-        file_name = 'cifar_100_non_station_1000000'
         col_count = 3072+1
         label_count = 100
 
 
-    #main(dataset, col_count,file_name, elements, granularity,effects,seed)
+    #main(dataset, col_count,file_name, elements, granularity,effects,seed,'uni')
     #retrive_data(file_name,col_count, dataset)
 
     write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)

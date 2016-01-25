@@ -7,7 +7,7 @@ import math
 
 chart_titles = ['CIFAR-10 [1000,1000,1000] (Layer 1)']
 
-legends = ['MIncDAE','DeepRLNet']
+legends = ['MI-DAE','RL-DAE']
 
 all_data = []
 with open('net_size_results.csv', 'r',newline='') as f:

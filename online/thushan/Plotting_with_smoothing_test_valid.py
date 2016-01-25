@@ -26,7 +26,7 @@ chart_titles = ['MNIST [500] (Validation Error)','MNIST [500] (Test Error)',
                 'CIFAR-10 [1000,1000,1000,1000,1000] (Validation Error)','CIFAR-10 [1000,1000,1000,1000,1000] (Test Error)',
                 'MNIST-ROT-BACK [500] (Validation Error)','MNIST-ROT-BACK [500] (Test Error)',
                 'MNIST-ROT-BACK [500,500,500] (Validation Error)','MNIST-ROT-BACK [500,500,500] (Test Error)']
-legends = ['SDAE','MIncDAE','DeepRLNet']
+legends = ['SDAE','MI-DAE','RL-DAE']
 all_data = []
 with open('test_valid_results_new.csv', 'r',newline='') as f:
     reader = csv.reader(f)
