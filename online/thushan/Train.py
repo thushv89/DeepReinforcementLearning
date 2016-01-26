@@ -260,21 +260,21 @@ def run():
             if opt == '--suffix':
                 log_suffix = arg
 
-    dataset = 'mnist-var' #mnist, mnist-var, cifar-10,cifar-100,svhn
-    dataset_type = 'non_station' # station or non_station
+    dataset = 'cifar-10' #mnist, mnist-var, cifar-10,cifar-100,svhn
+    dataset_type = 'station' # station or non_station
     turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
-    in_size = 784
+    in_size = 3072
     out_size = 10
 
     learnMode = 'online'
-    modelType = 'DeepRL'
+    modelType = 'MergeInc'
 
     learning_rate = 0.2
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [1500]
+    hid_sizes = [1000,1000,1000]
 
     corruption_level = 0.2
     lam = 0.1

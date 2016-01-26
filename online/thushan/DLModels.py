@@ -1241,10 +1241,10 @@ class MergeIncDAE(Transformer):
                 self._hard_pool.clear()
 
             # generative error optimization
-            for _ in range(int(self.iterations)):
-                for i in range(len(self.layers)-1):
-                    layer_greedy[i](int(batch_id))
-                ae_finetune_func(batch_id)
+            #for _ in range(int(self.iterations/2)):
+            #    for i in range(len(self.layers)-1):
+            #        layer_greedy[i](int(batch_id))
+            #    ae_finetune_func(batch_id)
 
             # discriminative error optimization
             train_func(batch_id)

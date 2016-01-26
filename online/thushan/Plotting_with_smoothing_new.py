@@ -19,6 +19,8 @@ def to_percent(y, position):
     else:
         return s + '%'
 
+
+
 chart_titles = ['MNIST (l1,500) (Predictive)','MNIST (l1,500) (Global Test Error)',
                 'CIFAR-10 (l3,1500) (Predictive)','CIFAR-10 (l3,1500) (Global Test Error)',
                 'MNIST-ROT-BACK (l3,1500) (Predictive)','MNIST-ROT-BACK (l3,1500) (Global Test Error)',
@@ -51,10 +53,42 @@ for i,row in enumerate(all_data):
 
 formatter = FuncFormatter(to_percent)
 
+import matplotlib.gridspec as gridspec
+gs1 = gridspec.GridSpec(2, 3)
 
-plt.figure(1)
+def plot_fig(ax,X,Y, title, x_label, y_label, legends,colors,fontsize):
+    for x,y,leg,c in zip(X,Y,legends,colors):
+        ax.plot(x,y,c,label=leg)
+    #ax.locator_params(nbins=3)
+    ax.set_xlabel(x_label, fontsize=fontsize)
+    ax.set_ylabel(y_label, fontsize=fontsize)
+    ax.set_title(title, fontsize=fontsize)
+    ax.legend(loc='lower left', shadow=False, fontsize='small')
 
+fig = plt.figure(1)
+x_label = 'Position in the Dataset'
+colors = ['r','b','y']
 # MNIST [500] (Validation Error)
+ax1 = fig.add_subplot(gs1[0])
+plot_fig(ax1,[x_axis,x_axis,x_axis],[smooth_data[0]*100,smooth_data[1]*100,smooth_data[2]*100],
+         chart_titles[0],x_label,'',legends[0:3],colors[0:3],'medium')
+
+ax2 = fig.add_subplot(gs1[3])
+plot_fig(ax2,[x_axis,x_axis,x_axis],[smooth_data[3]*100,smooth_data[4]*100,smooth_data[5]*100],
+         chart_titles[1],x_label,'',legends[0:3],colors[0:3],'medium')
+
+ax3 = fig.add_subplot(gs1[1])
+plot_fig(ax3,[x_axis,x_axis,x_axis],[smooth_data[6]*100,smooth_data[7]*100,smooth_data[8]*100],
+         chart_titles[2],x_label,'',legends[0:3],colors[0:3],'medium')
+
+ax4 = fig.add_subplot(gs1[4])
+plot_fig(ax4,[x_axis,x_axis,x_axis],[smooth_data[9]*100,smooth_data[10]*100,smooth_data[11]*100],
+         chart_titles[3],x_label,'',legends[0:3],colors[0:3],'medium')
+
+ax4 = fig.add_subplot(gs1[2])
+plot_fig(ax4,[x_axis,x_axis,x_axis],[smooth_data[9]*100,smooth_data[10]*100,smooth_data[11]*100],
+         chart_titles[3],x_label,'',legends[0:3],colors[0:3],'medium')
+'''
 str_subplot = '241'
 plt.subplot(int(str_subplot))
 plt.plot(x_axis,smooth_data[0]*100,'r',label=legends[0])
@@ -149,6 +183,6 @@ plt.xlabel('Position in the Dataset')
 plt.ylabel('Percentages of classes')
 plt.title(chart_titles[7])
 legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
-gs1.tight_layout(fig, rect=[0, 0, 0.5, 1])
+plt.gca().yaxis.set_major_formatter(formatter)'''
+#gs1.tight_layout(fig, rect=[0, 0, 1, 1])
 plt.show()
