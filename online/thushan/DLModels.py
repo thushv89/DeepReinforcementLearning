@@ -491,11 +491,10 @@ class StackedAutoencoderWithSoftmax(Transformer):
         valid_error_func = self.error_func(arc, v_x, v_y, batch_size, transformed_x)
         def pre_train(batch_id):
 
-            for _ in range(int(self.iterations/2)):
+            for _ in range(int(self.iterations)):
                 for i in range(len(self.layers)-1):
                     layer_greedy[i](int(batch_id))
                 pre_cost = ae_finetune_func(batch_id)
-            return pre_cost
 
         def finetune(batch_id):
             softmax_train_func(batch_id)
@@ -827,7 +826,7 @@ class CombinedObjective(Transformer):
 
 class DeepReinforcementLearningModel(Transformer):
 
-    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, valid_pool_size, controller):
+    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller,simi_thresh = 0.7):
 
         super().__init__(layers, 1, True)
 
@@ -843,13 +842,10 @@ class DeepReinforcementLearningModel(Transformer):
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
         self._diff_pool = Pool(layers[0].initial_size[0], pool_size)
 
-        self._valid_pool = Pool(layers[0].initial_size[0], valid_pool_size)
-        self._valid_hard_pool = Pool(layers[0].initial_size[0], valid_pool_size)
-
 
         self.iterations = iterations
         self.lam = lam
-
+        self.simi_thresh = simi_thresh
         self.train_distribution = []
         self.pool_distribution = []
 
@@ -868,17 +864,6 @@ class DeepReinforcementLearningModel(Transformer):
         self._softmax.process(x, y)
         self._merge_increment.process(x, y)
 
-    # add_from_shared uses a queue like adding mechanism, which means everything before is deleted
-    # if it run out of space
-    def build_valid_pool(self, v_x, v_y, batch_size, apply_x = identity):
-        hard_examples_valid_func = self._autoencoder.get_hard_examples(0, v_x, v_y, batch_size, apply_x)
-
-        def update_pools(v_batch_id):
-            self._valid_pool.add_from_shared(v_batch_id, batch_size, v_x, v_y)
-            self._valid_hard_pool.add(*hard_examples_valid_func(v_batch_id))
-            print('added batch: ',v_batch_id, ' valid pool size: ',self._valid_pool.size)
-
-        return update_pools
 
     def pool_if_different(self, pool, pool_dist, batch_id, current, batch_size,x, y):
 
@@ -925,21 +910,24 @@ class DeepReinforcementLearningModel(Transformer):
             print('Batch Scores ...')
             print(batch_scores)
             print('max simi: ', np.max([s[1] for s in batch_scores]))
-            if np.max([s[1] for s in batch_scores]) < 0.7:
+            # all non_station experiments used similarity threshold 0.7
+            if np.max([s[1] for s in batch_scores]) < self.simi_thresh:
                 print('added to pool', batch_id)
                 if len(pool_dist) == pool.max_size/batch_size:
                     pool_dist.pop(0)
                 pool_dist.append(current)
                 pool.add_from_shared(batch_id, batch_size, x, y)
 
-            '''#random batch switch
-            if np.max([s[1] for s in batch_scores]) > 0.99 and np.random.random()<0.1:
+            #random batch switch. this was introduced hoping it would help stationary situation. if does not,
+            # comment it. all non_stationary once did not use this part
+            # stationary use 0.99 threshold, non-station 0.9
+            '''if np.max([s[1] for s in batch_scores]) > 0.9 and np.random.random()<0.1:
                 max_idx = np.argmax([s[1] for s in batch_scores])
-                print('random: removing batch at ', max_idx)
-                pool_dist.pop(max_idx)
+                print('random: switching batch at ', max_idx)
+                dist_val = pool_dist.pop(max_idx)
 
                 pool.remove(max_idx,batch_size)
-                pool_dist.append(current)
+                pool_dist.append(dist_val)
                 pool.add_from_shared(batch_id,batch_size,x,y)'''
 
         else:
@@ -1222,7 +1210,7 @@ class MergeIncDAE(Transformer):
                     print('Curr Err: ', curr_err, ' Prev Err: ',prev_err)
                     if (curr_err/prev_err) < 1. - eps1:
                         print('e ratio < 1-eps',curr_err/prev_err,' ',1-eps1)
-                        inc = self._inc_log[-1] + 1.
+                        inc = self._inc_log[-1] + 30.
                     elif (curr_err/prev_err) > 1. - eps2:
                         print('e ratio > 1-eps',curr_err/prev_err,' ',1-eps2)
                         inc = self._inc_log[-1]/2

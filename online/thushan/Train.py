@@ -77,7 +77,7 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, valid_pool_size):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, simi_thresh):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -85,7 +85,7 @@ def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_le
     layers = make_layers(in_size, hid_sizes, out_size, False)
     if model_type == 'DeepRL':
         model = DLModels.DeepReinforcementLearningModel(
-            layers, corruption_level, rng, iterations, lam, batch_size, pool_size, valid_pool_size, policy)
+            layers, corruption_level, rng, iterations, lam, batch_size, pool_size, policy,simi_thresh)
     elif model_type == 'SAE':
         model = DLModels.StackedAutoencoderWithSoftmax(
             layers,corruption_level,rng,lam,iterations)
@@ -260,28 +260,32 @@ def run():
             if opt == '--suffix':
                 log_suffix = arg
 
+    #####################################################################
     dataset = 'cifar-10' #mnist, mnist-var, cifar-10,cifar-100,svhn
     dataset_type = 'station' # station or non_station
-    turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
+    iterations = 10
+
     in_size = 3072
     out_size = 10
 
-    learnMode = 'online'
-    modelType = 'MergeInc'
+    hid_sizes = [1000,1000,1000]
 
+    modelType = 'DeepRL'
+    simi_thresh = 0.995 #choose between 0.7 (non-station) or 0.995 (station)
+    #######################################################################
+    learnMode = 'online'
     learning_rate = 0.2
     batch_size = 1000
     epochs = 1
     theano.config.floatX = 'float32'
 
-    hid_sizes = [1000,1000,1000]
 
+    turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
     corruption_level = 0.2
     lam = 0.1
-    iterations = 20
+
     pool_size = 10000
 
-    valid_pool_size = pool_size//2
 
     online_total_rows = 1000000
     online_train_row_count = batch_size
@@ -291,16 +295,15 @@ def run():
         layers_str += str(s) + ', '
     layers_str += str(out_size)
 
-    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-    reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
+    valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
+    test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
+    reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
 
     network_size_logger, error_logger = None, None
 
     if modelType == 'DeepRL' or modelType == 'MergeInc':
-        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-        error_logger = get_logger('error_'+modelType+'_'+learnMode+'_'+dataset + '_' + layers_str+log_suffix,'logs')
-    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size, valid_pool_size)
+        network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size,simi_thresh)
 
 
     model_info = '---------- Model Information -------------\n'
@@ -317,7 +320,7 @@ def run():
     model_info += 'Iterations: ' + str(iterations) + '\n'
     model_info += 'Lambda Regularizing Coefficient: ' + str(lam) + '\n'
     model_info += 'Pool Size (Train): ' + str(pool_size) + '\n'
-    model_info += 'Pool Size (Valid): ' + str(valid_pool_size) + '\n'
+    model_info += 'Simi Thresh (For DeepRL): ' + str(simi_thresh) + '\n'
 
     print(model_info)
     valid_logger.info(model_info)

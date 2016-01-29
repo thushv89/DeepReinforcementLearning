@@ -21,11 +21,11 @@ def to_percent(y, position):
 
 
 
-chart_titles = ['MNIST (l1,500) (Predictive)','MNIST (l1,500) (Global Test Error)',
-                'CIFAR-10 (l3,1500) (Predictive)','CIFAR-10 (l3,1500) (Global Test Error)',
-                'MNIST-ROT-BACK (l3,1500) (Predictive)','MNIST-ROT-BACK (l3,1500) (Global Test Error)',
-                'Neuron Adaptation (St vs Non-St)','Class Distribution (CIFAR-10)']
-legends = ['SDAE','MI-DAE','RL-DAE']
+chart_titles = ['MNIST (l1,500) (Local Error)','MNIST (l1,500) (Global Error)',
+                'CIFAR-10 (l3,1000) (Local Error)','CIFAR-10 (l3,1000) (Global Error)',
+                'MNIST-ROT-BACK (l3,1500) (Local Error)','MNIST-ROT-BACK (l3,1500) (Global Error)',
+                'CIFAR-10 (l1,1000) Neuron Count (St vs Non-St)','CIFAR-10 (Class Distribution)']
+legends = ['SDAE','MI-DAE','RA-DAE']
 all_data = []
 with open('new_plots.csv', 'r',newline='') as f:
     reader = csv.reader(f)
@@ -56,38 +56,79 @@ formatter = FuncFormatter(to_percent)
 import matplotlib.gridspec as gridspec
 gs1 = gridspec.GridSpec(2, 3)
 
-def plot_fig(ax,X,Y, title, x_label, y_label, legends,colors,fontsize):
+def plot_fig(ax,X,Y, title, x_label, y_label, legends,colors,fontsize,legend_pos='lower left'):
     for x,y,leg,c in zip(X,Y,legends,colors):
         ax.plot(x,y,c,label=leg)
     #ax.locator_params(nbins=3)
-    ax.set_xlabel(x_label, fontsize=fontsize)
+    ax.set_xlabel(x_label, fontsize='medium')
     ax.set_ylabel(y_label, fontsize=fontsize)
     ax.set_title(title, fontsize=fontsize)
-    ax.legend(loc='lower left', shadow=False, fontsize='small')
+    ax.legend(loc=legend_pos, shadow=False, fontsize='medium')
 
 fig = plt.figure(1)
+fig.subplots_adjust(left=0.05,right=0.95,wspace = 0.4,hspace= 0.4)
+
 x_label = 'Position in the Dataset'
-colors = ['r','b','y']
-# MNIST [500] (Validation Error)
+colors = ['y','b','r']
+# MNIST [500] local
+from mpl_toolkits.axes_grid.anchored_artists import AnchoredText
+
+#at = AnchoredText("(a)",prop=dict(size=8), frameon=False,loc=2)
+
 ax1 = fig.add_subplot(gs1[0])
 plot_fig(ax1,[x_axis,x_axis,x_axis],[smooth_data[0]*100,smooth_data[1]*100,smooth_data[2]*100],
-         chart_titles[0],x_label,'',legends[0:3],colors[0:3],'medium')
+         chart_titles[0],x_label,'Local error %',legends[0:3],colors[0:3],'large','upper right')
+#ax1.add_artist(at)
+ax1.text(480,-20,'(a)',fontsize='large')
 
+# MNIST [500] global
 ax2 = fig.add_subplot(gs1[3])
 plot_fig(ax2,[x_axis,x_axis,x_axis],[smooth_data[3]*100,smooth_data[4]*100,smooth_data[5]*100],
-         chart_titles[1],x_label,'',legends[0:3],colors[0:3],'medium')
+         chart_titles[1],x_label,'Global error %',legends[0:3],colors[0:3],'large','upper right')
+ax2.text(480,-8,'(d)',fontsize='large')
 
+# cifar-10 local
 ax3 = fig.add_subplot(gs1[1])
 plot_fig(ax3,[x_axis,x_axis,x_axis],[smooth_data[6]*100,smooth_data[7]*100,smooth_data[8]*100],
-         chart_titles[2],x_label,'',legends[0:3],colors[0:3],'medium')
+         chart_titles[2],x_label,'Local error %',legends[0:3],colors[0:3],'large')
+ax3.text(480,-20,'(b)',fontsize='large')
 
+#cifar-10 global
 ax4 = fig.add_subplot(gs1[4])
 plot_fig(ax4,[x_axis,x_axis,x_axis],[smooth_data[9]*100,smooth_data[10]*100,smooth_data[11]*100],
-         chart_titles[3],x_label,'',legends[0:3],colors[0:3],'medium')
+         chart_titles[3],x_label,'Global error %',legends[0:3],colors[0:3],'large')
+ax4.text(480,-20,'(e)',fontsize='large')
 
-ax4 = fig.add_subplot(gs1[2])
-plot_fig(ax4,[x_axis,x_axis,x_axis],[smooth_data[9]*100,smooth_data[10]*100,smooth_data[11]*100],
-         chart_titles[3],x_label,'',legends[0:3],colors[0:3],'medium')
+#node adapt
+ax5 = fig.add_subplot(gs1[2])
+ax5.plot(x_axis,smooth_data[18],'b',linestyle='--',label='MI-DAE (St)')
+ax5.plot(x_axis,smooth_data[19],'r',linestyle='--',label='RL-DAE (St)')
+ax5.plot(x_axis,smooth_data[20],'b',linestyle='-',label='MI-DAE (Non-St)')
+ax5.plot(x_axis,smooth_data[21],'r',linestyle='-',label='RL-DAE (Non-St)')
+ax5.set_xlabel(x_label, fontsize='medium')
+ax5.set_ylabel('Node Count in 1st Layer', fontsize='large')
+ax5.set_title(chart_titles[6], fontsize='large')
+ax5.legend(loc='lower right', shadow=False, fontsize='medium')
+ax5.text(480,-20,'(c)',fontsize='large')
+
+# distribution
+ax6 = fig.add_subplot(gs1[5])
+ax6.plot(x_axis,smooth_data[22],'b',linestyle='-',label='0')
+ax6.plot(x_axis,smooth_data[23],'r',linestyle='-',label='1')
+ax6.plot(x_axis,smooth_data[24],'y',linestyle='-',label='2')
+ax6.plot(x_axis,smooth_data[25],'r',linestyle='--',label='3')
+ax6.plot(x_axis,smooth_data[26],'b',linestyle='--',label='4')
+ax6.plot(x_axis,smooth_data[27],'y',linestyle='--',label='5')
+ax6.plot(x_axis,smooth_data[28],'r',linestyle=':',label='6')
+ax6.plot(x_axis,smooth_data[29],'b',linestyle=':',label='7')
+ax6.plot(x_axis,smooth_data[30],'y',linestyle=':',label='8')
+ax6.plot(x_axis,smooth_data[31],'k',linestyle='--',label='9')
+
+ax6.set_xlabel(x_label, fontsize='medium')
+ax6.set_ylabel('Proportion of class per batch', fontsize='large')
+ax6.set_title(chart_titles[7], fontsize='large')
+ax6.legend(loc='upper right', shadow=False, fontsize='medium')
+ax6.text(480,-0.16,'(f)',fontsize='large')
 '''
 str_subplot = '241'
 plt.subplot(int(str_subplot))
@@ -184,5 +225,5 @@ plt.ylabel('Percentages of classes')
 plt.title(chart_titles[7])
 legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
 plt.gca().yaxis.set_major_formatter(formatter)'''
-#gs1.tight_layout(fig, rect=[0, 0, 1, 1])
+#gs1.tight_layout(fig,rect=[-0.05,-0,1.05,1])
 plt.show()
