@@ -122,7 +122,7 @@ def svhn_load():
 
     return all_data
 
-def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12, mode='gauss'):
+def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granularity = 20, effect = 'noise', seed = 12, mode='gauss',chunk_size=1000):
 
     # seed the generator (Random num generators use pseudo-random sequences)
     # seed determines the starting position in that sequence for the random numbers
@@ -170,23 +170,43 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
         f_prior = []
         for i in range(n):
             f_prior.append([1./len(data) for _ in range(len(data))])
+    elif mode == 'gauss_bin':
+        Xtest = np.linspace(0, col_count, n).reshape(-1, 1)
+        L = np.linalg.cholesky(kernel(Xtest, Xtest) + 1e-6 * np.eye(n))
+        f_prior = np.dot(L, np.random.normal(size=(n, 2)))
+        f_prior -= f_prior.min()
+        f_prior = f_prior ** math.ceil(math.sqrt(2))
+        f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
+        #f_prior = np.append(f_prior,np.zeros(n,len(data)-2),axis=1)
+        label_count = len(data)
+        for k_i in range(2,label_count):
+            data.pop(k_i)
+    elif mode == 'uni_bin':
+        label_count = len(data)
+        for k_i in range(2,label_count):
+            data.pop(k_i)
+        f_prior = []
+        for i in range(n):
+            f_prior.append([1./len(data) for _ in range(len(data))])
+    else:
+        raise NotImplementedError
 
     fp = np.memmap(filename='data'+os.sep+file_name + '.pkl', dtype='float32', mode='w+', shape=(elements,col_count))
     # f_prior is 'n' elements long. each of that has 'col_count' elements
     for i, dist in enumerate(f_prior):
         exampleList = []
-        for label in distribute_as(dist, granularity):
+        label_dist = distribute_as(dist, granularity)
+        for label in label_dist:
             example = random.choice(data[label])
-            example_before = example.copy()
             if effect == 'noise':
                 example = example + 0.25 * np.random.random_sample((example.shape[0],))
             example = np.minimum(1, example).astype('float32')
             exampleList.append(np.append(example,float(label)))
 
         print('done dist in prior',i, ' out of ', len(f_prior))
-        chunk_size = np.min([10000,elements/granularity])
+
         print('Breaking to small chunks for writing')
-        for j in range(0,int((elements/granularity)/chunk_size)):
+        for j in range(0,int(granularity/chunk_size)):
             pos_1 = int((i*granularity)+(j*chunk_size))
             pos_2 = int((i*granularity)+((j+1)*chunk_size))
             #fp[i*granularity:(i+1)*granularity,:] = exampleList[:]
@@ -200,9 +220,12 @@ def main(dataset='mnist', col_count=785,file_name=None, elements=100000, granula
 
     print('finished writing data ...')
 
-def write_data_distribution(filename, col_count, row_count, row_total, label_count, dataset):
+def write_data_distribution(filename, col_count, row_count, row_total, label_count, mode):
+    if mode == 'gauss_bin' or mode=='uni_bin':
+        label_count = 2
+
     print('retrieving data ...')
-    filename = 'data'+os.sep+file_name +'.pkl'
+    filename = 'data'+os.sep+filename +'.pkl'
     distribution = []
     from collections import Counter
 
@@ -217,7 +240,6 @@ def write_data_distribution(filename, col_count, row_count, row_total, label_cou
         #    distribution[str(k)] = distribution[str(k)] + v / sum(dist.values()) \
         #        if str(k) in distribution else v / sum(dist.values())
         distribution.append({str(k): v / sum(dist.values()) for k, v in dist.items()})
-
     ordered_dist = []
     for val in range(label_count):
         k = str(float(val))
@@ -262,15 +284,17 @@ if __name__ == '__main__':
 
     seed = 12
 
-    elements = 1000000
-    granularity = 1000
+    elements = 200000
+    granularity = 10000
     suffix = 'station'
     dataset = 'cifar_10'
+    mode = 'uni_bin'
 
     effects = 'noise'
     row_count=1000
+    chunk_size = 1000
 
-    file_name = dataset + '_'+ suffix + '_'+str(elements)
+    file_name = dataset + '_'+ suffix + '_'+str(elements) + '_' + mode
 
     if dataset == 'mnist':
         col_count = 784+1
@@ -283,8 +307,8 @@ if __name__ == '__main__':
         label_count = 100
 
 
-    #main(dataset, col_count,file_name, elements, granularity,effects,seed,'uni')
+    main(dataset, col_count,file_name, elements, granularity,effects,seed,mode,chunk_size)
     #retrive_data(file_name,col_count, dataset)
 
-    write_data_distribution(file_name,col_count,row_count,elements, label_count,dataset)
+    write_data_distribution(file_name,col_count,row_count,elements, label_count,mode)
     print('done...')

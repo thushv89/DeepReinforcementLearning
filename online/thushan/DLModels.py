@@ -830,6 +830,7 @@ class DeepReinforcementLearningModel(Transformer):
 
         super().__init__(layers, 1, True)
 
+        self.out_size = self.layers[-1].initial_size[1]
         self._mi_batch_size = mi_batch_size
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
@@ -921,7 +922,7 @@ class DeepReinforcementLearningModel(Transformer):
             #random batch switch. this was introduced hoping it would help stationary situation. if does not,
             # comment it. all non_stationary once did not use this part
             # stationary use 0.99 threshold, non-station 0.9
-            '''if np.max([s[1] for s in batch_scores]) > 0.9 and np.random.random()<0.1:
+            '''if np.max([s[1] for s in batch_scores]) > 0.9 and np.random.random()<0.25:
                 max_idx = np.argmax([s[1] for s in batch_scores])
                 print('random: switching batch at ', max_idx)
                 dist_val = pool_dist.pop(max_idx)
@@ -1019,6 +1020,46 @@ class DeepReinforcementLearningModel(Transformer):
             weights /= sum(weights)
             return np.convolve(log, weights)[n-1:-n+1]
 
+        def moving_average_v2(log,n):
+            weights = np.exp(np.linspace(-1, 0, n))
+            weights /= sum(weights)
+            weights_rev = weights[::-1]
+            conv = np.convolve(log,weights_rev)
+            return conv[int(len(conv)/2)]
+
+        def kl_div_dist(log,n,out_size):
+            past_dicts = log[-n:-1]
+            total_past = [0 for _ in range(out_size)]
+            for k in [str(i) for i in range(out_size)]:
+                for dict in past_dicts:
+                    if k in dict:
+                        total_past[int(k)] += dict[k]
+
+            total_past = [j*1.0/(self._mi_batch_size*(n-1)) for j in total_past]
+            print('kl_div mean for past dist: ',total_past)
+            current = [log[-1][lbl]*1.0/self._mi_batch_size if lbl in log[-1] else 0 for lbl in [str(l) for l in range(out_size)]]
+            print('kl_div current: ',current)
+            total_kl = 0
+            for p,q in zip(total_past,current):
+                if q<=0:
+                    q=1e-8
+                if p>0:
+                    total_kl += p*np.log(p*1.0/q)
+
+            return total_kl
+
+        def data_dist_vector(dist_dic,batch_size,out_size):
+
+            labels = [str(l_i) for l_i in range(out_size)]
+            values = []
+            for l in labels:
+                if l in dist_dic:
+                    values.append(dist_dic[l]*1.0/batch_size)
+                else:
+                    values.append(0)
+
+            return tuple(values)
+
         # get early stopping
         def train_adaptively(batch_id):
 
@@ -1038,10 +1079,18 @@ class DeepReinforcementLearningModel(Transformer):
             self.pool_if_different(self._diff_pool,self.pool_distribution,batch_id,self.train_distribution[-1], batch_size, x, y)
             print('size after pool_if_diff: ',self._diff_pool.size)
 
+            test_mode = False
+            window1,window2,window3 = 5,15,30
+            if test_mode:
+                print("\nWARNING: TEST MODE ACTIVE\n")
+                window1,window2,window3 = 3,4,5
             data = {
-                'mea_30': moving_average(self._error_log, 30),
-                'mea_15': moving_average(self._error_log, 15),
-                'mea_5': moving_average(self._error_log, 5),
+                'mea_3': moving_average(self._error_log, window3),
+                'mea_2': moving_average(self._error_log, window2),
+                'mea_1': moving_average(self._error_log, window1),
+                'mea_3_v2':moving_average_v2(self._error_log, window3),
+                'mea_2_v2':moving_average_v2(self._error_log, window2),
+                'mea_1_v2':moving_average_v2(self._error_log, window1),
                 'pool_relevant': self.pool_relevant(self._pool,self.train_distribution,batch_size),
                 'initial_size': self.layers[1].initial_size[0],
                 'input_size':self.layers[0].initial_size[0],
@@ -1051,7 +1100,15 @@ class DeepReinforcementLearningModel(Transformer):
                 'errors': self._error_log[-1],
                 'neuron_balance': self._neuron_balance_log[-1],
                 'reconstruction': self._reconstruction_log[-1],
-                'r_15': moving_average(self._reconstruction_log, 15)
+                'r_3': moving_average(self._reconstruction_log, window3),
+                'r_2': moving_average(self._reconstruction_log, window2),
+                'r_1': moving_average(self._reconstruction_log, window1),
+                'r_3_v2': moving_average_v2(self._reconstruction_log, window3),
+                'r_2_v2': moving_average_v2(self._reconstruction_log, window2),
+                'r_1_v2': moving_average_v2(self._reconstruction_log, window1),
+                'data_dist':data_dist_vector(self.train_distribution[-1],self._mi_batch_size,self.out_size),
+                'kl_div': kl_div_dist(self.train_distribution,window3,self.out_size),
+                'out_size':self.out_size
             }
 
             def merge_increment(func, pool, amount, merge, inc):
@@ -1078,7 +1135,7 @@ class DeepReinforcementLearningModel(Transformer):
             }
 
             #this is where reinforcement learning comes to play
-            self._controller.move(len(self._error_log), data, funcs)
+            self._controller.move(len(self._error_log), data, funcs,test_mode)
 
             train_func(batch_id)
 
@@ -1089,7 +1146,7 @@ class DeepReinforcementLearningModel(Transformer):
         return train_adaptively
 
     def set_train_distribution(self, t_distribution):
-        self.train_distribution = t_distribution
+        self.train_distribution.append(t_distribution[0])
 
     def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
         return self._softmax.validate_func(arc, x, y,batch_size)
@@ -1110,6 +1167,8 @@ class MergeIncDAE(Transformer):
 
         super().__init__(layers, 1, True)
         self._mi_batch_size = mi_batch_size
+        self._pool_size = pool_size
+        self._pool_refresh_window = int((self._pool_size/self._mi_batch_size)*2)
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
@@ -1118,6 +1177,7 @@ class MergeIncDAE(Transformer):
         # _pool : has all the data points
         # _hard_pool: has data points only that are above average reconstruction error
         self._pool = Pool(layers[0].initial_size[0], pool_size*3)
+        self._ft_pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
         self._pre_train_pool = Pool(layers[0].initial_size[0], 12000)
         self._pre_train_done = False
@@ -1151,6 +1211,7 @@ class MergeIncDAE(Transformer):
 
         train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
         train_func_pre_train = self._softmax.train_func(arc, learning_rate, self._pre_train_pool.data,  self._pre_train_pool.data_y, batch_size, apply_x)
+        train_func_ft_pool = self._softmax.train_func(arc, learning_rate, self._ft_pool.data, self._ft_pool.data_y, batch_size, apply_x)
 
         reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
         error_func = self.error_func(arc, x, y, batch_size, apply_x)
@@ -1174,6 +1235,7 @@ class MergeIncDAE(Transformer):
 
             batch_pool.add_from_shared(batch_id, batch_size, x, y)
             self._pool.add_from_shared(batch_id, batch_size, x, y)
+            self._ft_pool.add_from_shared(batch_id,batch_size,x, y)
 
             if self._pre_train_pool.size < self._pre_train_pool.max_size and not self._pre_train_done:
                 print('Adding batch to pre-training pool')
@@ -1202,11 +1264,11 @@ class MergeIncDAE(Transformer):
             print('X indexes Size: ', x_hard.shape[0], ' Hard pool size: ', self._hard_pool.size)
             if self._hard_pool.size >= self._hard_pool.max_size:
                 pool_indexes = self._hard_pool.as_size(int(self._hard_pool.size * 1), self._mi_batch_size)
-                if len(self._valid_error_log)>=40:
+                if len(self._valid_error_log) >= self._pool_refresh_window * 2:
                     eps1 = 0.025
                     eps2 = 0.01
-                    curr_err = np.sum([self._valid_error_log[i] for i in range(-20,0)])
-                    prev_err = np.sum([self._valid_error_log[i] for i in range(-40,-20)])
+                    curr_err = np.sum([self._valid_error_log[i] for i in range(-self._pool_refresh_window,0)])
+                    prev_err = np.sum([self._valid_error_log[i] for i in range(-2*self._pool_refresh_window,-self._pool_refresh_window)])
                     print('Curr Err: ', curr_err, ' Prev Err: ',prev_err)
                     if (curr_err/prev_err) < 1. - eps1:
                         print('e ratio < 1-eps',curr_err/prev_err,' ',1-eps1)
@@ -1227,7 +1289,12 @@ class MergeIncDAE(Transformer):
 
                 merge_inc_func_hard_pool(pool_indexes, 0.2*inc_prec, inc_prec)
                 self._hard_pool.clear()
-
+            '''else:
+                ft_pool_indexes = self._ft_pool.as_size(int(self._ft_pool.size * 1), batch_size)
+                print('No adding. Just Fine tuning with pool of size ',self._ft_pool.size,' ...')
+                for ft_i in ft_pool_indexes:
+                    print('Fine tuning with data in pool batch ',ft_i)
+                    train_func_ft_pool(ft_i)'''
             # generative error optimization
             #for _ in range(int(self.iterations/2)):
             #    for i in range(len(self.layers)-1):

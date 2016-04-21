@@ -20,9 +20,9 @@ def to_percent(y, position):
         return s + '%'
 
 
-
-chart_titles = ['MNIST (l1,500) (Local Error)','MNIST (l1,500) (Global Error)',
-                'CIFAR-10 (l3,1000) (Local Error)','CIFAR-10 (l3,1000) (Global Error)',
+'''
+chart_titles = ['MNIST (l1,500) (Local Error) (Non-St)','MNIST (l1,500) (Global Error) (Non-St)',
+                'CIFAR-10 (l3,1000) (Local Error) (St)','CIFAR-10 (l3,1000) (Global Error) (St)',
                 'MNIST-ROT-BACK (l3,1500) (Local Error)','MNIST-ROT-BACK (l3,1500) (Global Error)',
                 'CIFAR-10 (l1,1000) Neuron Count (St vs Non-St)','CIFAR-10 (Class Distribution)']
 legends = ['SDAE','MI-DAE','RA-DAE']
@@ -90,14 +90,14 @@ ax2.text(480,-8,'(d)',fontsize='large')
 # cifar-10 local
 ax3 = fig.add_subplot(gs1[1])
 plot_fig(ax3,[x_axis,x_axis,x_axis],[smooth_data[6]*100,smooth_data[7]*100,smooth_data[8]*100],
-         chart_titles[2],x_label,'Local error %',legends[0:3],colors[0:3],'large')
-ax3.text(480,-20,'(b)',fontsize='large')
+         chart_titles[2],x_label,'Local error %',legends[0:3],colors[0:3],'large','upper right')
+ax3.text(480,28,'(b)',fontsize='large')
 
 #cifar-10 global
 ax4 = fig.add_subplot(gs1[4])
 plot_fig(ax4,[x_axis,x_axis,x_axis],[smooth_data[9]*100,smooth_data[10]*100,smooth_data[11]*100],
-         chart_titles[3],x_label,'Global error %',legends[0:3],colors[0:3],'large')
-ax4.text(480,-20,'(e)',fontsize='large')
+         chart_titles[3],x_label,'Global error %',legends[0:3],colors[0:3],'large','upper right')
+ax4.text(480,40,'(e)',fontsize='large')
 
 #node adapt
 ax5 = fig.add_subplot(gs1[2])
@@ -130,100 +130,247 @@ ax6.set_title(chart_titles[7], fontsize='large')
 ax6.legend(loc='upper right', shadow=False, fontsize='medium')
 ax6.text(480,-0.16,'(f)',fontsize='large')
 '''
-str_subplot = '241'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[0]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[1]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[2]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[0])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
 
-# MNIST [500] (Global Test Error)
-str_subplot = '245'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[3]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[4]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[5]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[1])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
+chart_titles = ['State Space Comparison CIFAR-10(l3,1000) w.r.t. Global Error']
+legends = [
+    'State Space 1 (large)',
+    'State Space 2 (large + kl_div)',
+    'State Space 3 (small)',
+    'State Space 4 (small + kl_div)'
+           ]
 
-# CIFAR-10 [1000,1000,1000] (Validation Error)
-str_subplot = '242'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[6]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[7]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[8]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[2])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
+x_label = 'Position in the Dataset'
 
-# CIFAR-10 [1000,1000,1000] (Global Test Error)
-str_subplot = '246'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[9]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[10]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[11]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[4])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
+state_data = {}
+data_for_key = []
+key = None
+with open('state_comparison.csv', 'r',newline='') as f:
+    reader = csv.reader(f)
 
-# MNIST-ROT-BACK [1500,1500,1500] (Validation Error)
-str_subplot = '243'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[12]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[13]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[14]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[5])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
+    for row in reader:
+        data_row = []
+        if row[0]=='Validation Error' or row[0]=='Test Error' or row[0]=='Network Size':
+            if len(data_for_key)!=0:
+                state_data[key]=data_for_key
+            key = row[0]
+            data_for_key = []
+            continue
+        for i,col in enumerate(row):
+            if i==0:
+                continue
+            data_row.append(float(col)*100.)
+        data_for_key.append(data_row)
 
-# MNIST-ROT-BACK [1500,1500,1500] (Global Test Error)
-str_subplot = '247'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[15]*100,'r',label=legends[0])
-plt.plot(x_axis,smooth_data[16]*100,'b',label=legends[1])
-plt.plot(x_axis,smooth_data[17]*100,'y',label=legends[2])
-plt.xlabel('Position in the Dataset')
-plt.title(chart_titles[6])
-legend = plt.legend(loc='lower left', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)
+state_data[key]=data_for_key
 
-# 'Neuron Adaptation (Stationary vs Non-Stationary)'
-str_subplot = '244'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[18],'r',label='MI-DAE (St)')
-plt.plot(x_axis,smooth_data[19],'b',label='RL-DAE (St)')
-plt.plot(x_axis,smooth_data[20],'r',linestyle='--',label='MI-DAE (NonSt)')
-plt.plot(x_axis,smooth_data[21],'b',linestyle='--',label='RL-DAE (NonSt)')
-plt.xlabel('Position in the Dataset')
-plt.ylabel('Neuron count in the first hidden layer')
-plt.title(chart_titles[7])
-legend = plt.legend(loc='upper left', shadow=False, fontsize='small')
+x_axis = np.linspace(1,1000,1000)
+smooth_step = 10
+x_axis_short = np.linspace(1,1000,int(1000/smooth_step))
 
-# 'Class Distribution (CIFAR-10)'
-str_subplot = '248'
-plt.subplot(int(str_subplot))
-plt.plot(x_axis,smooth_data[22]*100,'b',label='0')
-plt.plot(x_axis,smooth_data[23]*100,'y',label='1')
-plt.plot(x_axis,smooth_data[24]*100,'r',label='2')
-plt.plot(x_axis,smooth_data[25]*100,'b',label='3')
-plt.plot(x_axis,smooth_data[26]*100,'y',label='4')
-plt.plot(x_axis,smooth_data[27]*100,'r',label='5')
-plt.plot(x_axis,smooth_data[28]*100,'b',label='6')
-plt.plot(x_axis,smooth_data[29]*100,'y',label='7')
-plt.plot(x_axis,smooth_data[30]*100,'r',label='8')
-plt.plot(x_axis,smooth_data[31]*100,'r',label='9')
-plt.xlabel('Position in the Dataset')
-plt.ylabel('Percentages of classes')
-plt.title(chart_titles[7])
-legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
-plt.gca().yaxis.set_major_formatter(formatter)'''
+smooth_state_data=[]
+
+for i,row in enumerate(state_data['Test Error']):
+    smooth_state_data.append(np.convolve(state_data['Test Error'][i], np.ones((smooth_step,))/smooth_step, mode='same'))
+    for j in range(0,int(smooth_step/2)):
+        smooth_state_data[i][j]=state_data['Test Error'][i][j]
+    for j in range(len(state_data['Test Error'][i])-1-int(smooth_step/2),len(state_data['Test Error'][i])):
+        smooth_state_data[i][j]=state_data['Test Error'][i][j]
+
+fig = plt.figure(2)
+plt.plot(x_axis,smooth_state_data[5],'b',linestyle='-',label=legends[0])
+plt.plot(x_axis,smooth_state_data[6],'y',linestyle='-',label=legends[1])
+plt.plot(x_axis,smooth_state_data[8],'r',linestyle='-',label=legends[2])
+plt.plot(x_axis,smooth_state_data[9],'m',linestyle='-',label=legends[3])
+plt.xlabel(x_label, fontsize='medium')
+plt.ylabel('Global Error %', fontsize='large')
+plt.title(chart_titles[0], fontsize='large')
+plt.legend(loc='upper right', shadow=False, fontsize='medium')
+
+
+policy_title = 'Policy (Q-Value) Comparison CIFAR-10-BIN (l3,1000)'
+policy_legends = ['Q(S,$Increment$)','Q(S,$Merge$)','Q(S,$Pool$)','Class-0','Class-1']
+
+x_label = 'Position in the Dataset'
+
+policy_data = {}
+key = None
+with open('policy_comparison.csv', 'r',newline='') as f:
+    reader = csv.reader(f)
+
+    for j,row in enumerate(reader):
+        data_row = []
+        if row[0]=='Non Station' or row[0]=='Station':
+            key = row[0]
+            print(key)
+            continue
+
+        for i,col in enumerate(row):
+            if i==0:
+                continue
+            print(j,',',i,',',col,'d')
+
+            data_row.append(float(col))
+
+        if key not in policy_data:
+            policy_data[key] = [data_row]
+        else:
+            policy_data[key].append(data_row)
+
+x_axis = np.linspace(1,139,139)
+
+import matplotlib.gridspec as gridspec
+fig = plt.figure(3)
+fig.suptitle(policy_title, fontsize='large')
+#plt.title(policy_title, fontsize='large')
+gs3 = gridspec.GridSpec(3, 8)
+
+ax3_1 = plt.subplot(gs3[:2, 4:])
+ax3_2 = plt.subplot(gs3[2,4])
+ax3_3 = plt.subplot(gs3[2, 5])
+ax3_4 = plt.subplot(gs3[2,6])
+ax3_5 = plt.subplot(gs3[2,7])
+x3_2 = np.linspace(0,20,20)
+x3_3 = np.linspace(25,35,10)
+x3_4 = np.linspace(45,60,15)
+x3_5 = np.linspace(110,125,15)
+
+ax3_6 = plt.subplot(gs3[:,:4])
+
+ax3_1.plot(x_axis,policy_data['Non Station'][0],'b',linestyle='-',label=policy_legends[0])
+ax3_1.plot(x_axis,policy_data['Non Station'][1],'r',linestyle='-',label=policy_legends[1])
+ax3_1.plot(x_axis,policy_data['Non Station'][2],'y',linestyle='-',label=policy_legends[2])
+ax3_1.plot(x_axis,policy_data['Non Station'][3],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_1.plot(x_axis,policy_data['Non Station'][4],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+
+ax3_1.text(15, 5, '1', fontsize=20)
+ax3_1.text(30, 3, '2', fontsize=20)
+ax3_1.text(50, 5.5, '3', fontsize=20)
+ax3_1.text(115, 3, '4', fontsize=20)
+
+ax3_1.set_title('Non Stationary Data Distribution', fontsize='medium')
+ax3_1.set_xlabel(x_label, fontsize='medium')
+ax3_1.set_ylabel('Q-Values/Class distribution', fontsize='large')
+ax3_1.legend(loc='upper right', shadow=False, fontsize='medium')
+
+ax3_2.plot(x3_2,policy_data['Non Station'][3][:20],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_2.plot(x3_2,policy_data['Non Station'][4][:20],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+ax3_2.set_ylim([0,1])
+ax3_2.set_title('Annotation 1', fontsize='medium')
+ax3_2.set_xticks(np.arange(min(x3_2), max(x3_2)+1, 5.0))
+ax3_2.set_ylabel('Normalized class \n distribution',fontsize='small')
+ax3_3.plot(x3_3,policy_data['Non Station'][3][25:35],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_3.plot(x3_3,policy_data['Non Station'][4][25:35],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+ax3_3.set_ylim([0,1])
+ax3_3.set_title('Annotation 2', fontsize='medium')
+ax3_3.set_xticks(np.arange(min(x3_3), max(x3_3)+1, 5.0))
+
+ax3_4.plot(x3_4,policy_data['Non Station'][3][45:60],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_4.plot(x3_4,policy_data['Non Station'][4][45:60],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+ax3_4.set_ylim([0,1])
+ax3_4.set_title('Annotation 3', fontsize='medium')
+ax3_4.set_xticks(np.arange(min(x3_4), max(x3_4)+1, 5.0))
+
+ax3_5.plot(x3_5,policy_data['Non Station'][3][110:125],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_5.plot(x3_5,policy_data['Non Station'][4][110:125],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+ax3_5.set_ylim([0,1])
+ax3_5.set_title('Annotation 4', fontsize='medium')
+ax3_5.set_xticks(np.arange(min(x3_5), max(x3_5)+1, 5.0))
+
+ax3_6.plot(x_axis,policy_data['Station'][0],'b',linestyle='-',label=policy_legends[0])
+ax3_6.plot(x_axis,policy_data['Station'][1],'r',linestyle='-',label=policy_legends[1])
+ax3_6.plot(x_axis,policy_data['Station'][2],'y',linestyle='-',label=policy_legends[2])
+ax3_6.plot(x_axis,policy_data['Station'][3],'b',linestyle='--',label=policy_legends[3],linewidth=2)
+ax3_6.plot(x_axis,policy_data['Station'][4],'r',linestyle='--',label=policy_legends[4],linewidth=2)
+
+ax3_6.set_xlabel(x_label, fontsize='medium')
+ax3_6.set_title('Stationary Data Distribution', fontsize='medium')
+ax3_6.set_ylabel('Q-Values/Class distribution', fontsize='large')
+ax3_6.legend(loc='upper left', shadow=False, fontsize='medium')
+
+gs3.tight_layout(fig,w_pad=-2.5,h_pad=0.5,rect=[0.05,0.0,0.95,.95])
+
+
+pool_title = 'Pool Size vs Global Error CIFAR-10 (l3,1000)'
+pool_legends = ['MI-DAE(Pool=10000)','MI-DAE(Pool=5000)','MI-DAE(Pool=1000)','RA-DAE(Pool=10000)','RA-DAE(Pool=5000)','RA-DAE(Pool=1000)']
+
+x_axis = np.linspace(1,999,999)
+x_label = 'Position in the Dataset'
+
+pool_data = {}
+key = None
+with open('pool_size.csv', 'r',newline='') as f:
+    reader = csv.reader(f)
+
+    for j,row in enumerate(reader):
+        data_row = []
+        if row[0]=='Validation Error' or row[0]=='Test Error':
+            key = row[0]
+            continue
+
+        for i,col in enumerate(row):
+            if i==0:
+                continue
+            data_row.append(float(col)*100)
+
+        if key not in pool_data:
+            pool_data[key] = [data_row]
+        else:
+            pool_data[key].append(data_row)
+
+smooth_pool_data=[]
+
+for i,row in enumerate(pool_data['Test Error']):
+    smooth_pool_data.append(np.convolve(pool_data['Test Error'][i], np.ones((smooth_step,))/smooth_step, mode='same'))
+    for j in range(0,int(smooth_step/2)):
+        smooth_pool_data[i][j]=pool_data['Test Error'][i][j]
+    for j in range(len(pool_data['Test Error'][i])-1-int(smooth_step/2),len(pool_data['Test Error'][i])):
+        smooth_pool_data[i][j]=pool_data['Test Error'][i][j]
+
+
+fig = plt.figure(4)
+plt.plot(x_axis,smooth_pool_data[0],'b',linestyle='--',label=pool_legends[0],linewidth=1.5)
+plt.plot(x_axis,smooth_pool_data[1],'y',linestyle='--',label=pool_legends[1],linewidth=1.5)
+plt.plot(x_axis,smooth_pool_data[2],'r',linestyle='--',label=pool_legends[2],linewidth=1.5)
+plt.plot(x_axis,smooth_pool_data[3],'b',linestyle='-',label=pool_legends[3])
+plt.plot(x_axis,smooth_pool_data[4],'y',linestyle='-',label=pool_legends[4])
+plt.plot(x_axis,smooth_pool_data[5],'r',linestyle='-',label=pool_legends[5])
+
+
+plt.xlabel(x_label, fontsize='medium')
+plt.ylabel('Global Error %', fontsize='large')
+plt.title(pool_title, fontsize='large')
+plt.legend(loc='lower left', shadow=False, fontsize='medium')
+
+'''vis_pool_data = []
+with open('state_vis_pool.csv', 'r',newline='') as f:
+    reader = csv.reader(f)
+
+    for j,row in enumerate(reader):
+        data_row = []
+        if j==0:
+            continue
+        for i,col in enumerate(row):
+            data_row.append(float(col))
+
+        vis_pool_data.append(data_row)
+
+vis_pool = np.asarray(vis_pool_data)
+fig = plt.figure(4)
+ax4_1 = fig.add_subplot(231)
+ax4_2 = fig.add_subplot(232)
+ax4_3 = fig.add_subplot(233)
+ax4_4 = fig.add_subplot(234)
+ax4_5 = fig.add_subplot(235)
+X, Y = np.meshgrid(vis_pool[:,0], vis_pool[:,1])
+Z = []
+for temp_i in range(len(X)):
+    Z.append(X[i])
+ax4_1.scatter(vis_pool[:,0],vis_pool[:,1])
+ax4_2.scatter(vis_pool[:,0],vis_pool[:,2])
+ax4_3.scatter(vis_pool[:,0],vis_pool[:,3])
+ax4_4.scatter(vis_pool[:,1],vis_pool[:,2])
+ax4_5.scatter(vis_pool[:,1],vis_pool[:,3])'''
 #gs1.tight_layout(fig,rect=[-0.05,-0,1.05,1])
 plt.show()
+
+

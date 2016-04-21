@@ -77,11 +77,11 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
 
     return layers
 
-def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, simi_thresh):
+def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, simi_thresh,rl_logger,rl_state_logger):
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
-    policy = RLPolicies.ContinuousState()
+    policy = RLPolicies.ContinuousState(q_logger=rl_logger,state_vis_logger=rl_state_logger)
     layers = make_layers(in_size, hid_sizes, out_size, False)
     if model_type == 'DeepRL':
         model = DLModels.DeepReinforcementLearningModel(
@@ -119,7 +119,7 @@ def create_image_from_vector(vec, dataset,turn_bw):
         imshow(np.reshape(new_vec*255,(-1,32)),cmap=cm.gray)
     show()
 
-def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, network_size_logger = None):
+def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, time_logger):
     t_distribution = []
     v_distribution = []
     start_time = time.clock()
@@ -170,9 +170,6 @@ def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_r
                     train_batch_stop_time = time.clock()
                     print('\nTime for train batch ', t_batch, ': ', (train_batch_stop_time-train_batch_start_time), ' (secs)')
 
-                network_size_logger.info(model._network_size_log)
-                model._network_size_log = []
-
             test_errors = []
             for test_batch in range(math.ceil(test_file[2] / batch_size)):
                 test_results = test_func(test_batch)
@@ -184,9 +181,10 @@ def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_r
 
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
+    time_logger.info((end_time-start_time))
     return np.mean(v_errors),test_errors
 
-def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, network_size_logger = None):
+def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file,time_logger):
     start_time = time.clock()
 
 
@@ -207,9 +205,6 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, le
             if (not v_errors) or len(v_errors)==0:
                 pass
 
-        network_size_logger.info(model._network_size_log)
-        model._network_size_log = []
-
         test_errors = []
 
         print('Testing phase ...\n')
@@ -219,6 +214,7 @@ def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, le
 
     end_time = time.clock()
     print('\nTime taken for the data stream: ', (end_time-start_time)/60, ' (mins)')
+    time_logger.info(end_time-start_time)
     return np.mean(v_errors),test_errors
 
 
@@ -261,17 +257,24 @@ def run():
                 log_suffix = arg
 
     #####################################################################
-    dataset = 'cifar-10' #mnist, mnist-var, cifar-10,cifar-100,svhn
-    dataset_type = 'station' # station or non_station
+
+    dataset = 'cifar-10' #mnist, mnist-var, cifar-10,cifar-100,svhn,cifar-10-bin
+    dataset_type = 'non_station' # station or non_station
     iterations = 10
 
-    in_size = 3072
-    out_size = 10
+    in_size = 3072 #cifar-10:3072, mnist:784, mnist-var:784
+    if dataset == 'cifar-10-bin':
+        out_size = 2
+    else:
+        out_size = 10
 
     hid_sizes = [1000,1000,1000]
 
     modelType = 'DeepRL'
-    simi_thresh = 0.995 #choose between 0.7 (non-station) or 0.995 (station)
+    simi_thresh = 0.8 #choose between 0.7 (non-station) or 0.995 (station)
+
+    pool_size = 10000
+
     #######################################################################
     learnMode = 'online'
     learning_rate = 0.2
@@ -279,15 +282,14 @@ def run():
     epochs = 1
     theano.config.floatX = 'float32'
 
-
     turn_bw = False # turn images black and white (for cifar-10 & cifar-100)
     corruption_level = 0.2
     lam = 0.1
 
-    pool_size = 10000
-
-
-    online_total_rows = 1000000
+    if not dataset=='cifar-10-bin':
+        online_total_rows = 1000000
+    else:
+        online_total_rows = 200000
     online_train_row_count = batch_size
 
     layers_str = str(in_size) + ', '
@@ -298,12 +300,14 @@ def run():
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
     reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
-
+    rl_logger = get_logger('policy_'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
+    state_vis_logger = get_logger('state_vis'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
+    time_logger = get_logger('time'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
     network_size_logger, error_logger = None, None
 
     if modelType == 'DeepRL' or modelType == 'MergeInc':
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
-    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size,simi_thresh)
+    model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size,simi_thresh,rl_logger=rl_logger,rl_state_logger=state_vis_logger)
 
 
     model_info = '---------- Model Information -------------\n'
@@ -350,6 +354,17 @@ def run():
             test_y = [ele[0] for ele in testdata['y']]
             res_test_x  = np.swapaxes(test_x,0,1).T.reshape((-1,3072),order='C')
             test_file = make_shared(np.asarray(res_test_x, dtype=np.float32), np.asarray(test_y, dtype=np.float32), 'test', True, 255.0, turn_bw)
+        elif dataset == 'cifar-10-bin':
+            f = open('data' + os.sep + 'cifar_10_test_batch', 'rb')
+            dict = pickle.load(f,encoding='latin1')
+            labels = np.asarray(dict.get('labels'),dtype=np.int8)
+            data = dict.get('data')
+
+            labels_0 = np.where(labels==0)[0]
+            labels_1 = np.where(labels==1)[0]
+            labels_01 = np.append(labels_0,labels_1)
+
+            test_file = make_shared(np.asarray(data, dtype=np.float32)[labels_01,:],np.asarray(labels,dtype=np.float32)[labels_01],'test',True, 255.0, turn_bw)
 
         validation_errors = []
         mean_test_errors  = []
@@ -373,11 +388,20 @@ def run():
             elif dataset == 'svhn':
                 next_data_file = load_from_memmap('data' + os.sep + 'svhn_non_station_1000000.pkl',online_train_row_count,in_size,i * online_train_row_count,turn_bw)
                 valid_file = [None,None]
+            elif dataset == 'cifar-10-bin':
+                if dataset_type == 'non_station':
+                    next_data_file = load_from_memmap('data' + os.sep + 'cifar_10_'+dataset_type+'_200000_gauss_bin.pkl',online_train_row_count,in_size,i*online_train_row_count,turn_bw)
+                elif dataset_type == 'station':
+                    next_data_file = load_from_memmap('data' + os.sep + 'cifar_10_'+dataset_type+'_200000_uni_bin.pkl',online_train_row_count,in_size,i*online_train_row_count,turn_bw)
+
+                valid_file = [None,None]
+            else:
+                raise NotImplementedError
 
             if curr_data_file and not modelType == 'MergeInc':
-                v_err,test_err = train_validate_and_test_v2(batch_size, curr_data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, network_size_logger)
+                v_err,test_err = train_validate_and_test_v2(batch_size, curr_data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file,time_logger)
             elif curr_data_file and modelType == 'MergeInc':
-                v_err,test_err = train_validate_mergeinc(batch_size, pool_size, curr_data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, network_size_logger)
+                v_err,test_err = train_validate_mergeinc(batch_size, pool_size, curr_data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file,time_logger)
 
             if v_err and test_err:
                 validation_errors.append(v_err)
@@ -394,6 +418,8 @@ def run():
                 valid_logger.info(validation_errors)
                 test_logger.info(list(mean_test_errors))
                 reconstruction_err_logger.info(list(np.asarray(model._reconstruction_log)[:]))
+                if network_size_logger:
+                    network_size_logger.info(list(np.asarray(model._network_size_log)))
 
             curr_data_file = next_data_file
 
@@ -440,9 +466,9 @@ def run():
 
 
         if not modelType == 'MergeInc':
-            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, learning_rate, model, modelType, valid_file, test_file, network_size_logger)
+            v_err,test_err = train_validate_and_test_v2(batch_size, data_file, learning_rate, model, modelType, valid_file, test_file)
         else:
-            v_err,test_err,prev_train_err,inc = train_validate_mergeinc(batch_size, data_file, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc, network_size_logger)
+            v_err,test_err,prev_train_err,inc = train_validate_mergeinc(batch_size, data_file, learning_rate, model, modelType, valid_file, test_file, prev_train_err, inc)
 
         valid_logger.info(list(v_err))
         test_logger.info(list(test_err),', mean:', np.mean(test_err))
