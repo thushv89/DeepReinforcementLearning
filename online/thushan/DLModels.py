@@ -9,6 +9,12 @@ import logging
 import os
 from math import ceil
 
+'''=============================================================
+ All the DeepLearning models and utility functions we implemented can be found here.
+
+ [1] Online Adaptation of Deep Architectures with Reinforcement Learning (Thushan Ganegedara, Lionel Ott and Fabio Ramos)
+ [2] Online incremental feature learning with denoising autoencoders (Guanyu Zhou, Kihyuk Sohn, and Honglak Lee)
+============================================================='''
 def identity(x):
     return x
 
@@ -31,62 +37,13 @@ def iterations_shim(train, iterations):
 
     return func
 
-def iterations_shim_early_stopping(train, validate, valid_size, iterations,frequency, validation_type='n_rand_for_train',n=10):
-
-    def func(i):
-        #we want to minimize best_valid_loss, so we shoudl start with largest
-        best_valid_loss = np.inf
-        patience = 0.5 * iterations # look at this many examples
-        patience_increase = 1.5
-        improvement_threshold = 0.995
-
-        if validation_type == 'full':
-            v_batch_idx = np.arange(0,valid_size)
-
-        if validation_type == 'n_rand_for_train':
-            v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size=n)
-            print('random batches: ', list(v_batch_idx))
-
-        for iter in range(iterations):
-            print('early_stopping iteration ', str(iter))
-
-            # the number of minibatches to go through before checking validation set
-            validation_freq = min(frequency,int(patience/2))
-
-            t_result = train(i)
-
-            # this is an operation done in cycles. 1 cycle is iter+1/validation_freq
-            # doing this every epoch
-            if iter % validation_freq == 0:
-                print('validating')
-                if validation_type == 'n_rand_for_validation':
-                    v_batch_idx = np.random.uniform(low = 0, high = valid_size-1, size=n)
-                    print('random batches: ', list(v_batch_idx))
-
-                v_results = []
-                for v_i in v_batch_idx:
-                    v_results.append(validate(int(v_i)))
-                curr_valid_loss = np.min(v_results)
-                print('curr valid loss: ', curr_valid_loss, ' best_valid_loss: ', best_valid_loss)
-
-                if curr_valid_loss < best_valid_loss:
-
-                    if (curr_valid_loss < best_valid_loss * improvement_threshold):
-                        prev_patience = patience
-                        patience = max(patience, iter * patience_increase)
-                        print('patience improve: ', prev_patience, ' -> ', patience)
-                    best_valid_loss = curr_valid_loss
-
-            # patience is here to check the maximum number of iterations it should check
-            # before terminating
-            if patience <= iter:
-                print('early stopping on iter: ', iter, ' (<', patience, ')')
-                break
-
-        return [t_result,best_valid_loss]
-
-    return func
-
+'''=============================================================
+ Transformer - This is an abstract parent class defining the important common methods for all the Deep Models we implement.
+ Idea of using the Transformer pattern is to transform a given set of layers of neurons to different networks serving different purposes.
+    train_func - Train a given network on a given batch of data
+    validate_func - Validate the data and produce the error on a given network for a given batch of data
+    error_func - Return the error on a given network for a given batch of data
+============================================================='''
 class Transformer(object):
 
     #__slots__ save memory by allocating memory only to the varibles defined in the list
@@ -159,7 +116,11 @@ class Transformer(object):
         '''
         pass
 
+'''=============================================================
+ DeepAutoencoder - Treat the whole network as a single entity. Then pass a given input (_x) through the network.
+ Get the reconstructed output (x). Then optimize the the binary crossentropy cost between _x and x
 
+============================================================='''
 class DeepAutoencoder(Transformer):
     ''' General Deep Autoencoder '''
     def __init__(self,layers, corruption_level, rng, lam=0.0):
@@ -221,6 +182,7 @@ class DeepAutoencoder(Transformer):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
         return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=updates, transformed_x=transformed_x)
 
+    # allows training a part of the network (selected through index on the neuron) with a given batch of data
     def indexed_train_func(self, arc, learning_rate, x, batch_size, transformed_x):
 
         nnlayer = self.layers[arc]
@@ -244,6 +206,7 @@ class DeepAutoencoder(Transformer):
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
         return self.make_func(x=x,y=y,batch_size=batch_size,output=self.cost, updates=None, transformed_x=transformed_x)
 
+    #get the hard examples as defined in [2] (top of the script)
     def get_hard_examples(self, _, x, y, batch_size, transformed_x=identity):
         '''
         Returns the set of training cases (above avg reconstruction error)
@@ -257,6 +220,9 @@ class DeepAutoencoder(Transformer):
         indexes = T.argsort(self.cost_vector)[(self.cost_vector.shape[0] // 2):]
         return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], updates=None, transformed_x=transformed_x)
 
+'''=============================================================
+ StackedAutoencoder - Treat each layer of the network as a single DeepAutoencoder. Then optimize the network layer-wise
+============================================================='''
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
     def __init__(self, layers, corruption_level, rng):
@@ -276,6 +242,9 @@ class StackedAutoencoder(Transformer):
     def validate_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._autoencoders[arc].validate_func(0,x,y,batch_size,lambda x: chained_output(self.layers[:arc],transformed_x(x)))
 
+'''=============================================================
+ Softmax - Softmax layer of a deep network.
+============================================================='''
 class Softmax(Transformer):
 
     def __init__(self, layers, iterations):
@@ -334,19 +303,6 @@ class Softmax(Transformer):
         ''' because func inside iteration_shim didn't return anything at the moment '''
         return iterations_shim(train, iterations)
 
-    def train_with_early_stop_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
-        if iterations is None:
-            iterations = self.iterations
-
-        updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
-
-        train = self.make_func(x,y,batch_size,self.cost,updates,transformed_x)
-        validate = self.make_func(v_x, v_y, batch_size, self.cost, None, transformed_x)
-
-        valid_size = v_y.get_value().shape[0]/batch_size
-
-        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 10)
-
     def train_with_early_stop_func_v2(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
         if iterations is None:
             iterations = self.iterations
@@ -370,6 +326,9 @@ class Softmax(Transformer):
     def get_y_labels(self, act, x, y, batch_size, transformed_x = identity):
         return self.make_func(x, y, batch_size, self._y, None, transformed_x)
 
+'''=============================================================
+ Pool - Data pools used to optimize the netowork (B_r and B_ft)
+============================================================='''
 class Pool(object):
 
     #theano.config.compute_test_value = 'warn'
@@ -396,6 +355,7 @@ class Pool(object):
         # function to update the data and data_y
         self._update = theano.function([pos, x, y], updates=update)
 
+    # remove a batch from the pool at the given batch_id (idx)
     def remove(self, idx, batch_size):
         print('Pool: pool size: ',self.size)
         print('removing batch at ', idx, ' from pool')
@@ -412,6 +372,7 @@ class Pool(object):
         print('Now the position at ', self.position)
         self.size = self.position
 
+    # add data to the pool
     def add(self, x, y, rows=None):
 
         if not rows:
@@ -431,25 +392,32 @@ class Pool(object):
 
         self._ring_add(x,y)
 
+    # add data to the pool as batches of data
     def add_from_shared(self, index, batch_size, x, y):
         self.add(x[index * batch_size:(index+1) * batch_size].eval(), y[index * batch_size:(index+1) * batch_size].eval(), batch_size)
 
-    # this someway returns batch indexes
+    # this returns batch indexes
     def as_size(self, new_size, batch_size):
         batches = new_size // batch_size
         starting_index = self.position // batch_size
         index_space = self.size // batch_size
         return [(starting_index - i + index_space) % index_space for i in range(batches)]
 
+    # clear the pool of data
     def clear(self):
         self.size = 0
         self.position = 0
 
+    # add data while treating the pool like a queue
     def _ring_add(self, x, y):
         self._update(self.position, x, y)
         self.size = min(self.size + x.shape[0], self.max_size)
         self.position = (self.position + x.shape[0]) % self.max_size
 
+'''=============================================================
+ StackedAutoencoderWithSoftmax - This compose of a DeepAutoencoder, StackedAutoencoder(_layered_autoencoder)
+  and a Softmax layer and functions as an ordinary StackedAutoencoder
+============================================================='''
 class StackedAutoencoderWithSoftmax(Transformer):
 
     __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations', '_error_log','_reconstruction_log','_valid_error_log']
@@ -516,6 +484,9 @@ class StackedAutoencoderWithSoftmax(Transformer):
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
+'''=============================================================
+ A utility transformer allows user to add/remove neurons from a network ([1] and [2])
+============================================================='''
 class MergeIncrementingAutoencoder(Transformer):
 
     __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
@@ -735,7 +706,10 @@ class MergeIncrementingAutoencoder(Transformer):
 
         return merge_model
 
-
+'''=============================================================
+ CombinedObjective - Enhances the softmax layer to use both discriminative and generative erros to optimize the network
+ (used as this works  better than using the discriminative error alone)
+============================================================='''
 class CombinedObjective(Transformer):
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
@@ -772,27 +746,6 @@ class CombinedObjective(Transformer):
         comb_obj_finetune_func = self.make_func(x, y, batch_size, self.cost, update, transformed_x)
         return iterations_shim(comb_obj_finetune_func, iterations)
 
-    def train_with_early_stop_func(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
-        if iterations is None:
-            iterations = self.iterations
-
-        combined_cost = self._softmax.cost + self.lam * self._autoencoder.cost
-        #combined_cost = self._softmax.cost + self.lam * 0.5
-
-        theta = []
-        for layer in self.layers[:-1]:
-            theta += [layer.W, layer.b, layer.b_prime]
-        theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
-
-        updates = [(param, param - learning_rate*grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
-
-        train = self.make_func(x,y,batch_size,combined_cost,updates,transformed_x)
-        validate = self.make_func(v_x, v_y, batch_size, combined_cost, None, transformed_x)
-
-        valid_size = v_x.get_value().shape[0]/batch_size
-
-        return iterations_shim_early_stopping(train, validate, valid_size, iterations, 10)
-
     def train_with_early_stop_func_v2(self, arc, learning_rate, x, y, v_x, v_y, batch_size, transformed_x=identity, iterations=None):
         if iterations is None:
             iterations = self.iterations
@@ -824,6 +777,9 @@ class CombinedObjective(Transformer):
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
+'''=============================================================
+ Our approach explained in [1]
+============================================================='''
 class DeepReinforcementLearningModel(Transformer):
 
     def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller,simi_thresh = 0.7):
@@ -837,8 +793,9 @@ class DeepReinforcementLearningModel(Transformer):
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam=lam, iterations=iterations)
         self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam=lam, iterations=iterations)
 
-        # _pool : has all the data points
-        # _hard_pool: has data points only that are above average reconstruction error
+        # _pool : has all the data points (B_r)
+        # _hard_pool: has data points only that were difficult to classify
+        # _diff_pool: has data which has a diverse distribution of classes (B_ft)
         self._pool = Pool(layers[0].initial_size[0], pool_size)
         self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
         self._diff_pool = Pool(layers[0].initial_size[0], pool_size)
@@ -1160,7 +1117,9 @@ class DeepReinforcementLearningModel(Transformer):
     def act_vs_pred_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._softmax.act_vs_pred_func(arc, x, y, batch_size, transformed_x)
 
-
+'''=============================================================
+ Algorithm explained in [2]
+============================================================='''
 class MergeIncDAE(Transformer):
 
     def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size):

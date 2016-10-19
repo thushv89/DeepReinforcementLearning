@@ -10,6 +10,9 @@ import os
 from collections import defaultdict
 import csv
 
+'''-------------------------------------------------------
+Takes a normal dataset and produce a non-stationary data for a given dataset
+-------------------------------------------------------'''
 def distribute_as(dist, n):
     cumsum = np.cumsum(dist)
 
@@ -284,13 +287,16 @@ if __name__ == '__main__':
 
     seed = 12
 
-    elements = 200000
-    granularity = 10000
-    suffix = 'station'
-    dataset = 'cifar_10'
-    mode = 'uni_bin'
+    elements = 200000 # number of datapoints in final dataset
+    granularity = 10000 #granularity changes how fast data changes
+    suffix = 'station' #suffix used for the file name of produced data
+    dataset = 'cifar_10' #dataset to use
+    mode = 'uni_bin' #distribution type: gauss (gaussian distribution for multi-class data) ,uni (uniform distribution for multi-class data,
+                    # gauss_bin (gaussian distribution for binary-class data),uni_bin (uniform distribution for binary-class data)
 
-    effects = 'noise'
+    effects = 'noise' #any special effects to have (e.g. noisy images)
+
+    # parameters to define amount of data written to disk at a time
     row_count=1000
     chunk_size = 1000
 

@@ -14,6 +14,14 @@ import logging
 import numpy as np
 import time
 
+'''=============================================================
+ Uses the DLModels and train and produce results using given data
+
+ [1] Online Adaptation of Deep Architectures with Reinforcement Learning (Thushan Ganegedara, Lionel Ott and Fabio Ramos)
+ [2] Online incremental feature learning with denoising autoencoders (Guanyu Zhou, Kihyuk Sohn, and Honglak Lee)
+============================================================='''
+
+#Make theano shared variables with given data
 def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0,turn_bw=False):
     '''' Load data into shared variables '''
     if turn_bw:
@@ -32,6 +40,7 @@ def make_shared(batch_x, batch_y, name, normalize, normalize_thresh=1.0,turn_bw=
 
     return x_shared, y_shared, size
 
+# load data from pickle
 def load_from_pickle(filename):
 
     with open(filename, 'rb') as handle:
@@ -43,6 +52,8 @@ def load_from_pickle(filename):
 
         return train, valid, test
 
+# this is used for large datasets
+# load data as partitions at a time
 def load_from_memmap(filename, row_count, in_size, start_row,turn_bw):
     if turn_bw:
         col_count = in_size*3 + 1
@@ -65,6 +76,7 @@ def load_from_memmap(filename, row_count, in_size, start_row,turn_bw):
 
     return train
 
+# create layers for given input size, hidden layer size and output size
 def make_layers(in_size, hid_sizes, out_size, zero_last = False):
     layers = []
     layers.append(NNLayer.Layer(in_size, hid_sizes[0], False, None, None, None))
@@ -78,6 +90,22 @@ def make_layers(in_size, hid_sizes, out_size, zero_last = False):
     return layers
 
 def make_model(model_type,in_size, hid_sizes, out_size,batch_size, corruption_level, lam, iterations, pool_size, simi_thresh,rl_logger,rl_state_logger):
+    '''
+    make the model using given parameters
+    :param model_type: DLModel as a string DeepRL([1]) or SAE (Stacked autoencoder) or MergeInc ([2])
+    :param in_size: Input feature size (int)
+    :param hid_sizes: Hidden layer sizes as a list on int
+    :param out_size: Output size (int)
+    :param batch_size: Batch size for SGD (int)
+    :param corruption_level: Corruption for denoising (float between 0-1)
+    :param lam: reguralizer coefficient for CombinedObjective
+    :param iterations: iterations for each batch in SGD
+    :param pool_size: size of the data pools
+    :param simi_thresh: similarity threshold considered for B_ft (read [1])
+    :param rl_logger: Logger
+    :param rl_state_logger: Logger
+    :return: Model as a Class object from DLModels
+    '''
 
     rng = T.shared_randomstreams.RandomStreams(0)
 
@@ -108,6 +136,13 @@ def format_array_to_print(arr, num_ele=5):
     return s
 
 def create_image_from_vector(vec, dataset,turn_bw):
+    '''
+    Utility class to check if data is valid
+    :param vec: Image data as a vector
+    :param dataset: the data set as a string mnist or cifar-10
+    :param turn_bw: boolean defining if image should be turn black and white
+    :return:
+    '''
     from pylab import imshow,show,cm
     if dataset == 'mnist':
         imshow(np.reshape(vec*255,(-1,28)),cmap=cm.gray)
@@ -120,6 +155,19 @@ def create_image_from_vector(vec, dataset,turn_bw):
     show()
 
 def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file, time_logger):
+    '''
+    Train function which takes a batch or data at a given time and process batches of data in an online fashion
+    :param batch_size: int
+    :param data_file: Data batch as a theano shared (used to calculate the validation error)
+    :param next_data_file: Next data batch as a theano share (current data batch)
+    :param learning_rate: float (0-1)
+    :param model: Model from make_model function
+    :param modelType: String
+    :param valid_file: Deprecated
+    :param test_file: An independent test dataset
+    :param time_logger: Logger
+    :return:
+    '''
     t_distribution = []
     v_distribution = []
     start_time = time.clock()
@@ -185,8 +233,21 @@ def train_validate_and_test_v2(batch_size, data_file, next_data_file, learning_r
     return np.mean(v_errors),test_errors
 
 def train_validate_mergeinc(batch_size, pool_size, data_file, next_data_file, learning_rate, model, modelType, valid_file, test_file,time_logger):
+    '''
+    Similar to train function above but used for the algorithm in [2]
+    :param batch_size:
+    :param pool_size:
+    :param data_file:
+    :param next_data_file:
+    :param learning_rate:
+    :param model:
+    :param modelType:
+    :param valid_file:
+    :param test_file:
+    :param time_logger:
+    :return:
+    '''
     start_time = time.clock()
-
 
     for arc in range(model.arcs):
 
@@ -241,6 +302,21 @@ def get_logger(name, folder_path):
     return logger
 
 def run():
+    '''
+    Run function that runs a given algorithm
+    The following variables can be changed to achieve various results
+    dataset,
+    dataset_type = station is a data set with non changing distribution over time and non_station changes distribution over time
+    input_size = should match the correct value for correct dataset
+    out_size = should match the correct value for correct dataset
+    hid_sizes = hidden layer sizes from (close to the input to furthest to input)
+    modelType = DLModel you want to use
+
+    Note: We modified mnist and cifar-10 to produce non-stationary versions for those datasets. This was done using DataDistGenerator class.
+    It will take the ordinary mnist and cifar-10 datasets and produce non-stationary versions of them which changes distribution of data overtime
+    Each non-stationary datasets had 1,000,000 examples except for cifar-10-bin (200,000)
+    :return:
+    '''
     log_suffix = ''
     import getopt
     import sys
@@ -297,6 +373,7 @@ def run():
         layers_str += str(s) + ', '
     layers_str += str(out_size)
 
+    # all the loggers
     valid_logger = get_logger('validation_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
     test_logger = get_logger('test_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
     reconstruction_err_logger = get_logger('reconstruction_error_'+modelType+'_'+learnMode+'_'+dataset + '_' + dataset_type + '_' + layers_str+log_suffix,'logs')
@@ -309,7 +386,7 @@ def run():
         network_size_logger = get_logger('network_size_'+modelType+'_'+learnMode+'_'+dataset +'_'+dataset_type + '_' + layers_str+log_suffix,'logs')
     model = make_model(modelType,in_size, hid_sizes, out_size, batch_size,corruption_level,lam,iterations,pool_size,simi_thresh,rl_logger=rl_logger,rl_state_logger=state_vis_logger)
 
-
+    # to print model information
     model_info = '---------- Model Information -------------\n'
     model_info += 'Dataset: ' + dataset + '\n'
     model_info += 'Dataset type: ' + dataset_type + '\n'
